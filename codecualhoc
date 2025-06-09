@@ -1,539 +1,264 @@
--- UI Roblox hiện đại với tất cả tính năng trong 1 mục
-
 local Players = game:GetService("Players")
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
-
-
 local TeleportPosition = Vector3.new(0, 0, 0)
-
 local autoClickEnabled = false
-
-local clickThread
-
 local selectedPlayer = nil
 
-
-
 local screenGui = Instance.new("ScreenGui")
-
 screenGui.Name = "ModernModMenu"
-
 screenGui.ResetOnSpawn = false
-
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-
-
--- Nút toggle menu (bánh răng)
-
+-- Nút toggle menu
 local toggleButton = Instance.new("ImageButton")
-
 toggleButton.Size = UDim2.new(0, 40, 0, 40)
-
 toggleButton.Position = UDim2.new(1, -50, 1, -50)
-
 toggleButton.BackgroundTransparency = 1
-
-toggleButton.Image = "rbxassetid://6031091002" -- icon "cog"
-
+toggleButton.Image = "rbxassetid://6031091002"
 toggleButton.Parent = screenGui
 
-
-
 -- Frame menu chính
-
 local frame = Instance.new("Frame", screenGui)
-
 frame.Size = UDim2.new(0, 320, 0, 350)
-
 frame.Position = UDim2.new(0, 20, 0, 20)
-
 frame.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
-
 frame.BorderSizePixel = 0
-
 frame.Visible = false
-
 frame.Active = true
-
 frame.Draggable = true
-
-frame.ClipsDescendants = true
-
 frame.BackgroundTransparency = 0.05
-
-frame.AnchorPoint = Vector2.new(0, 0)
-
-
-
--- Bo góc đẹp
-
-local corner = Instance.new("UICorner", frame)
-
-corner.CornerRadius = UDim.new(0, 12)
-
-
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
 
 -- Tiêu đề
-
 local title = Instance.new("TextLabel", frame)
-
 title.Size = UDim2.new(1, 0, 0, 40)
-
 title.BackgroundTransparency = 1
-
 title.Text = "🎮 Roblox Utility Menu"
-
 title.Font = Enum.Font.GothamBold
-
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
-
 title.TextSize = 20
 
-
-
--- UI Grid layout
-
+-- Layout
 local layout = Instance.new("UIListLayout", frame)
-
 layout.SortOrder = Enum.SortOrder.LayoutOrder
-
 layout.Padding = UDim.new(0, 8)
-
 layout.VerticalAlignment = Enum.VerticalAlignment.Top
-
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-
-
 title.LayoutOrder = 0
 
+-- FPS Counter
+local fpsLabel = Instance.new("TextLabel", screenGui)
+fpsLabel.Size = UDim2.new(0, 100, 0, 25)
+fpsLabel.Position = UDim2.new(0, 10, 0, 10)
+fpsLabel.BackgroundTransparency = 0.4
+fpsLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+fpsLabel.TextColor3 = Color3.new(1, 1, 1)
+fpsLabel.Font = Enum.Font.Code
+fpsLabel.TextSize = 16
+fpsLabel.Text = "FPS: 0"
+Instance.new("UICorner", fpsLabel).CornerRadius = UDim.new(0, 6)
 
+-- FPS updater
+local lastUpdate = tick()
+local frameCount = 0
+RunService.RenderStepped:Connect(function()
+	frameCount += 1
+	if tick() - lastUpdate >= 1 then
+		fpsLabel.Text = "FPS: " .. tostring(frameCount)
+		frameCount = 0
+		lastUpdate = tick()
+	end
+end)
 
--- Helper tạo khung mỗi dòng
-
+-- Helper functions
 local function createContainer(height)
-
-    local container = Instance.new("Frame")
-
-    container.Size = UDim2.new(0.9, 0, 0, height)
-
-    container.BackgroundTransparency = 1
-
-    container.LayoutOrder = layout.AbsoluteContentSize.Y
-
-    container.Name = "Row"
-
-    return container
-
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(0.9, 0, 0, height)
+	container.BackgroundTransparency = 1
+	container.LayoutOrder = layout.AbsoluteContentSize.Y
+	container.Name = "Row"
+	return container
 end
-
-
-
--- Helper tạo TextBox
 
 local function createTextBox(labelText, defaultValue, callback)
+	local container = createContainer(36)
+	local label = Instance.new("TextLabel", container)
+	label.Size = UDim2.new(0.4, 0, 1, 0)
+	label.Text = labelText
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.Gotham
+	label.TextColor3 = Color3.fromRGB(220, 220, 220)
+	label.TextSize = 16
+	label.TextXAlignment = Enum.TextXAlignment.Left
 
-    local container = createContainer(36)
+	local textBox = Instance.new("TextBox", container)
+	textBox.Size = UDim2.new(0.6, -8, 1, 0)
+	textBox.Position = UDim2.new(0.4, 8, 0, 0)
+	textBox.Text = tostring(defaultValue)
+	textBox.Font = Enum.Font.GothamSemibold
+	textBox.TextSize = 16
+	textBox.BackgroundColor3 = Color3.fromRGB(50, 60, 80)
+	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 6)
 
-    local label = Instance.new("TextLabel", container)
+	textBox.FocusLost:Connect(function(enter)
+		if enter then callback(tonumber(textBox.Text)) end
+	end)
 
-    label.Size = UDim2.new(0.4, 0, 1, 0)
-
-    label.Text = labelText
-
-    label.BackgroundTransparency = 1
-
-    label.Font = Enum.Font.Gotham
-
-    label.TextColor3 = Color3.fromRGB(220, 220, 220)
-
-    label.TextSize = 16
-
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-
-
-    local textBox = Instance.new("TextBox", container)
-
-    textBox.Size = UDim2.new(0.6, -8, 1, 0)
-
-    textBox.Position = UDim2.new(0.4, 8, 0, 0)
-
-    textBox.Text = tostring(defaultValue)
-
-    textBox.Font = Enum.Font.GothamSemibold
-
-    textBox.TextSize = 16
-
-    textBox.BackgroundColor3 = Color3.fromRGB(50, 60, 80)
-
-    textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-    Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 6)
-
-
-
-    textBox.FocusLost:Connect(function(enter)
-
-        if enter then
-
-            callback(tonumber(textBox.Text))
-
-        end
-
-    end)
-
-
-
-    container.Parent = frame
-
+	container.Parent = frame
 end
-
-
-
--- Helper tạo nút
 
 local function createButton(text, callback)
-
-    local btn = Instance.new("TextButton")
-
-    btn.Size = UDim2.new(0.9, 0, 0, 36)
-
-    btn.Text = text
-
-    btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-    btn.Font = Enum.Font.GothamBold
-
-    btn.TextSize = 16
-
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(90, 150, 200) end)
-
-    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180) end)
-
-    btn.MouseButton1Click:Connect(callback)
-
-    btn.Parent = frame
-
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.9, 0, 0, 36)
+	btn.Text = text
+	btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 16
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(90, 150, 200) end)
+	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180) end)
+	btn.MouseButton1Click:Connect(callback)
+	btn.Parent = frame
 end
-
-
-
--- Helper tạo checkbox
 
 local function createCheckbox(text, callback)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.9, 0, 0, 36)
+	btn.Text = "☐ " .. text
+	btn.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 16
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 
-    local btn = Instance.new("TextButton")
+	local enabled = false
+	btn.MouseButton1Click:Connect(function()
+		enabled = not enabled
+		btn.Text = (enabled and "☑ " or "☐ ") .. text
+		callback(enabled)
+	end)
 
-    btn.Size = UDim2.new(0.9, 0, 0, 36)
-
-    btn.Text = "☐ " .. text
-
-    btn.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
-
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-    btn.Font = Enum.Font.Gotham
-
-    btn.TextSize = 16
-
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-
-
-    local enabled = false
-
-    btn.MouseButton1Click:Connect(function()
-
-        enabled = not enabled
-
-        btn.Text = (enabled and "☑ " or "☐ ") .. text
-
-        callback(enabled)
-
-    end)
-
-
-
-    btn.Parent = frame
-
+	btn.Parent = frame
 end
 
-
-
--- Khởi tạo giao diện duy nhất
-
+-- Giao diện chính
 createTextBox("Speed", 16, function(val)
-
-    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-    if h then h.WalkSpeed = val end
-
+	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if h then h.WalkSpeed = val end
 end)
-
-
 
 createTextBox("Jump", 50, function(val)
-
-    local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-    if h then h.JumpPower = val end
-
+	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if h then h.JumpPower = val end
 end)
-
-
 
 createButton("📌 Lưu vị trí", function()
-
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-    if hrp then
-
-        TeleportPosition = hrp.Position
-
-        print("Vị trí đã lưu:", TeleportPosition)
-
-    end
-
+	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if hrp then TeleportPosition = hrp.Position end
 end)
-
-
 
 createButton("🧭 Teleport", function()
-
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-    if hrp then
-
-        hrp.CFrame = CFrame.new(TeleportPosition)
-
-        print("Đã teleport đến:", TeleportPosition)
-
-    end
-
+	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	if hrp then hrp.CFrame = CFrame.new(TeleportPosition) end
 end)
-
-
 
 createCheckbox("⚡ Auto Click", function(enabled)
-
-    autoClickEnabled = enabled
-
-    if enabled then
-
-        if not clickThread or coroutine.status(clickThread) == "dead" then
-
-            clickThread = coroutine.create(function()
-
-                while autoClickEnabled do
-
-                    local remote = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Click")
-
-                    if remote then
-
-                        local success, err = pcall(function()
-
-                            remote:FireServer()
-
-                        end)
-
-                        if not success then
-
-                            warn("Lỗi Auto Click:", err)
-
-                        end
-
-                    end
-
-                    task.wait(0.1)
-
-                end
-
-            end)
-
-            coroutine.resume(clickThread)
-
-        end
-
-    else
-
-        if clickThread and coroutine.status(clickThread) ~= "dead" then
-
-            coroutine.close(clickThread)
-
-        end
-
-    end
-
+	autoClickEnabled = enabled
+	if enabled then
+		spawn(function()
+			while autoClickEnabled do
+				VirtualInputManager:SendMouseButtonEvent(0.5, 0.5, 0, true, nil, 0)
+				VirtualInputManager:SendMouseButtonEvent(0.5, 0.5, 0, false, nil, 0)
+				task.wait(0.1)
+			end
+		end)
+	end
 end)
 
+-- Dropdown chọn người chơi để teleport đến
+local dropdownButton = Instance.new("TextButton")
+dropdownButton.Size = UDim2.new(0.9, 0, 0, 36)
+dropdownButton.Text = "Chọn người chơi"
+dropdownButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
+dropdownButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+dropdownButton.Font = Enum.Font.GothamBold
+dropdownButton.TextSize = 16
+Instance.new("UICorner", dropdownButton).CornerRadius = UDim.new(0, 6)
+dropdownButton.Parent = frame
 
+local dropdownOpen = false
 
--- Danh sách chọn người chơi
+local listFrame = Instance.new("ScrollingFrame")
+listFrame.Size = UDim2.new(0.9, 0, 0, 120)
+listFrame.Position = UDim2.new(0, 0, 0, 0)
+listFrame.BackgroundColor3 = Color3.fromRGB(50, 60, 80)
+listFrame.BorderSizePixel = 0
+listFrame.Visible = false
+listFrame.Parent = frame
+Instance.new("UICorner", listFrame).CornerRadius = UDim.new(0, 6)
+listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 
-local playerDropdown = Instance.new("TextButton")
+local listLayout = Instance.new("UIListLayout", listFrame)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 4)
 
-playerDropdown.Size = UDim2.new(0.9, 0, 0, 36)
-
-playerDropdown.Text = "👤 Select Player"
-
-playerDropdown.BackgroundColor3 = Color3.fromRGB(50, 60, 80)
-
-playerDropdown.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-playerDropdown.Font = Enum.Font.GothamBold
-
-playerDropdown.TextSize = 16
-
-Instance.new("UICorner", playerDropdown).CornerRadius = UDim.new(0, 6)
-
-playerDropdown.Parent = frame
-
-
-
-local playerListFrame = Instance.new("Frame")
-
-playerListFrame.Size = UDim2.new(0.9, 0, 0, 0)
-
-playerListFrame.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
-
-playerListFrame.BorderSizePixel = 0
-
-playerListFrame.Visible = false
-
-Instance.new("UICorner", playerListFrame).CornerRadius = UDim.new(0, 6)
-
-playerListFrame.Parent = frame
-
-local playerLayout = Instance.new("UIListLayout", playerListFrame)
-
-playerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-playerLayout.Padding = UDim.new(0, 4)
-
-
-
-playerDropdown.MouseButton1Click:Connect(function()
-
-    playerListFrame.Visible = not playerListFrame.Visible
-
-    if playerListFrame.Visible then
-
-        local playerList = Players:GetPlayers()
-
-        if #playerList > 0 and LocalPlayer then
-
-            playerListFrame.Size = UDim2.new(0.9, 0, 0, math.min(#playerList * 30, 150))
-
-            for _, child in pairs(playerListFrame:GetChildren()) do
-
-                if child ~= playerLayout then child:Destroy() end
-
-            end
-
-            for _, player in pairs(playerList) do
-
-                if player ~= LocalPlayer then
-
-                    local success, playerBtn = pcall(function()
-
-                        local btn = Instance.new("TextButton")
-
-                        btn.Size = UDim2.new(1, 0, 0, 30)
-
-                        btn.Text = player.Name
-
-                        btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-
-                        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-                        btn.Font = Enum.Font.Gotham
-
-                        btn.TextSize = 14
-
-                        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-
-                        btn.MouseButton1Click:Connect(function()
-
-                            selectedPlayer = player
-
-                            playerDropdown.Text = "👤 Selected: " .. player.Name
-
-                            playerListFrame.Visible = false
-
-                        end)
-
-                        return btn
-
-                    end)
-
-                    if success and playerBtn then
-
-                        playerBtn.Parent = playerListFrame
-
-                    else
-
-                        warn("Lỗi tạo nút cho người chơi:", player.Name)
-
-                    end
-
-                end
-
-            end
-
-        else
-
-            playerListFrame.Size = UDim2.new(0.9, 0, 0, 0)
-
-            warn("Không có người chơi khác trong server hoặc LocalPlayer không tồn tại!")
-
+-- Hàm cập nhật danh sách người chơi
+local function updatePlayerList()
+    -- Xoá danh sách cũ
+    for _, child in pairs(listFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
         end
-
     end
 
+    for i, player in ipairs(Players:GetPlayers()) do
+        local playerBtn = Instance.new("TextButton")
+        playerBtn.Size = UDim2.new(1, 0, 0, 30)
+        playerBtn.BackgroundColor3 = Color3.fromRGB(80, 90, 110)
+        playerBtn.TextColor3 = Color3.new(1, 1, 1)
+        playerBtn.Font = Enum.Font.Gotham
+        playerBtn.TextSize = 16
+        playerBtn.Text = player.Name
+        playerBtn.LayoutOrder = i
+        playerBtn.Parent = listFrame
+        Instance.new("UICorner", playerBtn).CornerRadius = UDim.new(0, 6)
+
+        playerBtn.MouseButton1Click:Connect(function()
+            selectedPlayer = player
+            dropdownButton.Text = "→ " .. player.Name
+            listFrame.Visible = false
+            dropdownOpen = false
+        end)
+    end
+    -- Cập nhật CanvasSize dựa vào tổng chiều cao các phần tử
+    listFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+end
+
+dropdownButton.MouseButton1Click:Connect(function()
+    dropdownOpen = not dropdownOpen
+    listFrame.Visible = dropdownOpen
+    if dropdownOpen then
+        updatePlayerList()
+    end
 end)
 
-
-
--- Nút Teleport đến người chơi đã chọn
-
-createButton("🧭 Teleport to Selected", function()
-
+-- Nút Teleport đến người chơi được chọn
+createButton("🚀 Teleport đến người chơi", function()
     if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") then
-
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
         if hrp then
-
-            hrp.CFrame = selectedPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 5, 0) -- Teleport gần người chơi
-
-            print("Đã teleport đến:", selectedPlayer.Name)
-
+            hrp.CFrame = selectedPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
         end
-
-    else
-
-        print("Vui lòng chọn người chơi trước!")
-
     end
-
 end)
-
-
 
 -- Toggle menu
-
 toggleButton.MouseButton1Click:Connect(function()
-
-    frame.Visible = not frame.Visible
-
+	frame.Visible = not frame.Visible
 end)
