@@ -6,6 +6,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local TeleportPosition = Vector3.new(0, 0, 0)
 local autoClickEnabled = false
+local antiAfkEnabled = false
 local selectedPlayer = nil
 
 local screenGui = Instance.new("ScreenGui")
@@ -23,7 +24,7 @@ toggleButton.Parent = screenGui
 
 -- Frame menu chính
 local frame = Instance.new("Frame", screenGui)
-frame.Size = UDim2.new(0, 320, 0, 350)
+frame.Size = UDim2.new(0, 320, 0, 400)
 frame.Position = UDim2.new(0, 20, 0, 20)
 frame.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
 frame.BorderSizePixel = 0
@@ -42,13 +43,12 @@ title.Font = Enum.Font.GothamBold
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 20
 
--- Layout
+title.LayoutOrder = 0
 local layout = Instance.new("UIListLayout", frame)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 8)
 layout.VerticalAlignment = Enum.VerticalAlignment.Top
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-title.LayoutOrder = 0
 
 -- FPS Counter
 local fpsLabel = Instance.new("TextLabel", screenGui)
@@ -74,18 +74,13 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- Helper functions
-local function createContainer(height)
+local function createTextBox(labelText, defaultValue, callback)
 	local container = Instance.new("Frame")
-	container.Size = UDim2.new(0.9, 0, 0, height)
+	container.Size = UDim2.new(0.9, 0, 0, 36)
 	container.BackgroundTransparency = 1
 	container.LayoutOrder = layout.AbsoluteContentSize.Y
 	container.Name = "Row"
-	return container
-end
 
-local function createTextBox(labelText, defaultValue, callback)
-	local container = createContainer(36)
 	local label = Instance.new("TextLabel", container)
 	label.Size = UDim2.new(0.4, 0, 1, 0)
 	label.Text = labelText
@@ -147,7 +142,7 @@ local function createCheckbox(text, callback)
 	btn.Parent = frame
 end
 
--- Giao diện chính
+-- UI Components
 createTextBox("Speed", 16, function(val)
 	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	if h then h.WalkSpeed = val end
@@ -163,7 +158,7 @@ createButton("📌 Lưu vị trí", function()
 	if hrp then TeleportPosition = hrp.Position end
 end)
 
-createButton("🧭 Teleport", function()
+createButton("🧱 Teleport", function()
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if hrp then hrp.CFrame = CFrame.new(TeleportPosition) end
 end)
@@ -181,81 +176,37 @@ createCheckbox("⚡ Auto Click", function(enabled)
 	end
 end)
 
--- Dropdown chọn người chơi để teleport đến
-local dropdownButton = Instance.new("TextButton")
-dropdownButton.Size = UDim2.new(0.9, 0, 0, 36)
-dropdownButton.Text = "Chọn người chơi"
-dropdownButton.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-dropdownButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-dropdownButton.Font = Enum.Font.GothamBold
-dropdownButton.TextSize = 16
-Instance.new("UICorner", dropdownButton).CornerRadius = UDim.new(0, 6)
-dropdownButton.Parent = frame
-
-local dropdownOpen = false
-
-local listFrame = Instance.new("ScrollingFrame")
-listFrame.Size = UDim2.new(0.9, 0, 0, 120)
-listFrame.Position = UDim2.new(0, 0, 0, 0)
-listFrame.BackgroundColor3 = Color3.fromRGB(50, 60, 80)
-listFrame.BorderSizePixel = 0
-listFrame.Visible = false
-listFrame.Parent = frame
-Instance.new("UICorner", listFrame).CornerRadius = UDim.new(0, 6)
-listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-local listLayout = Instance.new("UIListLayout", listFrame)
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 4)
-
--- Hàm cập nhật danh sách người chơi
-local function updatePlayerList()
-    -- Xoá danh sách cũ
-    for _, child in pairs(listFrame:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
-    end
-
-    for i, player in ipairs(Players:GetPlayers()) do
-        local playerBtn = Instance.new("TextButton")
-        playerBtn.Size = UDim2.new(1, 0, 0, 30)
-        playerBtn.BackgroundColor3 = Color3.fromRGB(80, 90, 110)
-        playerBtn.TextColor3 = Color3.new(1, 1, 1)
-        playerBtn.Font = Enum.Font.Gotham
-        playerBtn.TextSize = 16
-        playerBtn.Text = player.Name
-        playerBtn.LayoutOrder = i
-        playerBtn.Parent = listFrame
-        Instance.new("UICorner", playerBtn).CornerRadius = UDim.new(0, 6)
-
-        playerBtn.MouseButton1Click:Connect(function()
-            selectedPlayer = player
-            dropdownButton.Text = "→ " .. player.Name
-            listFrame.Visible = false
-            dropdownOpen = false
-        end)
-    end
-    -- Cập nhật CanvasSize dựa vào tổng chiều cao các phần tử
-    listFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
-end
-
-dropdownButton.MouseButton1Click:Connect(function()
-    dropdownOpen = not dropdownOpen
-    listFrame.Visible = dropdownOpen
-    if dropdownOpen then
-        updatePlayerList()
-    end
+createCheckbox("🍊 Boost FPS", function(enabled)
+	if enabled then
+		spawn(function()
+			for i,v in next, workspace:GetDescendants() do
+				pcall(function() v.Transparency = 1 end)
+			end
+			for i,v in next, getnilinstances() do
+				pcall(function()
+					v.Transparency = 1
+					for i1,v1 in next, v:GetDescendants() do
+						v1.Transparency = 1
+					end
+				end)
+			end
+			workspace.DescendantAdded:Connect(function(v)
+				pcall(function() v.Transparency = 1 end)
+			end)
+		end)
+	end
 end)
 
--- Nút Teleport đến người chơi được chọn
-createButton("🚀 Teleport đến người chơi", function()
-    if selectedPlayer and selectedPlayer.Character and selectedPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.CFrame = selectedPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
-        end
-    end
+createCheckbox("🍊 Anti-AFK", function(enabled)
+	antiAfkEnabled = enabled
+	if enabled then
+		spawn(function()
+			while antiAfkEnabled do
+				VirtualInputManager:SendMouseMoveEvent(math.random(), math.random(), 0)
+				task.wait(60)
+			end
+		end)
+	end
 end)
 
 -- Toggle menu
