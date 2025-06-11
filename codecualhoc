@@ -4,27 +4,27 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
-local TeleportPosition = Vector3.new(0, 0, 0)
+local savedPositions = {}
 local autoClickEnabled = false
 local antiAfkEnabled = false
-local selectedPlayer = nil
+local loopTeleportEnabled = false
+local loopTeleportDelay = 3
 
-local screenGui = Instance.new("ScreenGui")
+-- GUI
+local screenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
 screenGui.Name = "ModernModMenu"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Nút toggle menu
-local toggleButton = Instance.new("ImageButton")
+-- Toggle button
+local toggleButton = Instance.new("ImageButton", screenGui)
 toggleButton.Size = UDim2.new(0, 40, 0, 40)
 toggleButton.Position = UDim2.new(1, -50, 1, -50)
 toggleButton.BackgroundTransparency = 1
 toggleButton.Image = "rbxassetid://6031091002"
-toggleButton.Parent = screenGui
 
--- Frame menu chính
+-- Main Frame
 local frame = Instance.new("Frame", screenGui)
-frame.Size = UDim2.new(0, 320, 0, 400)
+frame.Size = UDim2.new(0, 320, 0, 500)
 frame.Position = UDim2.new(0, 20, 0, 20)
 frame.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
 frame.BorderSizePixel = 0
@@ -34,16 +34,17 @@ frame.Draggable = true
 frame.BackgroundTransparency = 0.05
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
 
--- Tiêu đề
+-- Title
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1, 0, 0, 40)
 title.BackgroundTransparency = 1
 title.Text = "lh_tapmod"
 title.Font = Enum.Font.GothamBold
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextColor3 = Color3.new(1, 1, 1)
 title.TextSize = 20
-
 title.LayoutOrder = 0
+
+-- Layout
 local layout = Instance.new("UIListLayout", frame)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Padding = UDim.new(0, 8)
@@ -62,7 +63,7 @@ fpsLabel.TextSize = 16
 fpsLabel.Text = "FPS: 0"
 Instance.new("UICorner", fpsLabel).CornerRadius = UDim.new(0, 6)
 
--- FPS updater
+-- FPS Update
 local lastUpdate = tick()
 local frameCount = 0
 RunService.RenderStepped:Connect(function()
@@ -74,6 +75,7 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
+-- Create Functions
 local function createTextBox(labelText, defaultValue, callback)
 	local container = Instance.new("Frame")
 	container.Size = UDim2.new(0.9, 0, 0, 36)
@@ -142,7 +144,50 @@ local function createCheckbox(text, callback)
 	btn.Parent = frame
 end
 
--- UI Components
+local function refreshTeleportList()
+	for _, obj in pairs(frame:GetChildren()) do
+		if obj:IsA("Frame") and obj.Name == "TPRow" then obj:Destroy() end
+	end
+
+	for i, pos in pairs(savedPositions) do
+		local row = Instance.new("Frame")
+		row.Name = "TPRow"
+		row.Size = UDim2.new(0.9, 0, 0, 30)
+		row.BackgroundTransparency = 1
+
+		local teleportBtn = Instance.new("TextButton", row)
+		teleportBtn.Size = UDim2.new(0.65, -4, 1, 0)
+		teleportBtn.Position = UDim2.new(0, 0, 0, 0)
+		teleportBtn.Text = "TP " .. i
+		teleportBtn.Font = Enum.Font.Gotham
+		teleportBtn.TextSize = 14
+		teleportBtn.BackgroundColor3 = Color3.fromRGB(100, 150, 100)
+		teleportBtn.TextColor3 = Color3.new(1, 1, 1)
+		Instance.new("UICorner", teleportBtn).CornerRadius = UDim.new(0, 6)
+		teleportBtn.MouseButton1Click:Connect(function()
+			local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then hrp.CFrame = CFrame.new(pos) end
+		end)
+
+		local deleteBtn = Instance.new("TextButton", row)
+		deleteBtn.Size = UDim2.new(0.35, 0, 1, 0)
+		deleteBtn.Position = UDim2.new(0.65, 4, 0, 0)
+		deleteBtn.Text = "🗑"
+		deleteBtn.Font = Enum.Font.GothamBold
+		deleteBtn.TextSize = 14
+		deleteBtn.BackgroundColor3 = Color3.fromRGB(180, 70, 70)
+		deleteBtn.TextColor3 = Color3.new(1, 1, 1)
+		Instance.new("UICorner", deleteBtn).CornerRadius = UDim.new(0, 6)
+		deleteBtn.MouseButton1Click:Connect(function()
+			table.remove(savedPositions, i)
+			refreshTeleportList()
+		end)
+
+		row.Parent = frame
+	end
+end
+
+-- Controls
 createTextBox("Speed", 16, function(val)
 	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	if h then h.WalkSpeed = val end
@@ -155,12 +200,37 @@ end)
 
 createButton("📌 Lưu vị trí", function()
 	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if hrp then TeleportPosition = hrp.Position end
+	if hrp then
+		table.insert(savedPositions, hrp.Position)
+		refreshTeleportList()
+	end
 end)
 
-createButton("🧱 Teleport", function()
-	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if hrp then hrp.CFrame = CFrame.new(TeleportPosition) end
+createTextBox("⏱ Delay (s)", 3, function(val)
+	loopTeleportDelay = val
+end)
+
+createCheckbox("🔁 Loop Teleport", function(enabled)
+	loopTeleportEnabled = enabled
+	if enabled then
+    spawn(function()
+        local index = 1
+        while loopTeleportEnabled do
+            if #savedPositions > 0 then
+                local pos = savedPositions[index]
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and pos then
+                    hrp.CFrame = CFrame.new(pos)
+                end
+                index = index + 1
+                if index > #savedPositions then index = 1 end
+                task.wait(tonumber(loopTeleportDelay) or 3)
+            else
+                task.wait(1)
+            end
+        end
+    end)
+end
 end)
 
 createCheckbox("⚡ Auto Click", function(enabled)
@@ -179,16 +249,8 @@ end)
 createCheckbox("🍊 Boost FPS", function(enabled)
 	if enabled then
 		spawn(function()
-			for i,v in next, workspace:GetDescendants() do
+			for _, v in pairs(workspace:GetDescendants()) do
 				pcall(function() v.Transparency = 1 end)
-			end
-			for i,v in next, getnilinstances() do
-				pcall(function()
-					v.Transparency = 1
-					for i1,v1 in next, v:GetDescendants() do
-						v1.Transparency = 1
-					end
-				end)
 			end
 			workspace.DescendantAdded:Connect(function(v)
 				pcall(function() v.Transparency = 1 end)
@@ -209,7 +271,7 @@ createCheckbox("🍊 Anti-AFK", function(enabled)
 	end
 end)
 
--- Toggle menu
+-- Toggle Frame
 toggleButton.MouseButton1Click:Connect(function()
 	frame.Visible = not frame.Visible
 end)
