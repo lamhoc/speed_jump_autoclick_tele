@@ -8,7 +8,7 @@ local savedPositions = {}
 local autoClickEnabled = false
 local antiAfkEnabled = false
 local loopTeleportEnabled = false
-local autoAcceptTradeEnabled = false 
+local autoAcceptTradeEnabled = false 
 local loopTeleportDelay = 3
 
 -- GUI
@@ -145,42 +145,36 @@ local function createCheckbox(text, callback)
 	btn.Parent = frame
 end
 
--- TÍNH NĂNG: Auto Accept Trade (Spam 1s/lần khi hiện bảng)
+-- TÍNH NĂNG: Auto Accept Trade (Spam 1s/lần)
 createCheckbox("🤝 Auto Accept Trade (Fish It)", function(enabled)
-    autoAcceptTradeEnabled = enabled
-    
-    if enabled then
-        spawn(function()
-            while autoAcceptTradeEnabled do
-                pcall(function()
-                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                    -- Kiểm tra đường dẫn nút Yes
-                    local yesButton = playerGui and playerGui:FindFirstChild("Prompt") 
-                                     and playerGui.Prompt:FindFirstChild("Blackout") 
-                                     and playerGui.Prompt.Blackout:FindFirstChild("Options") 
-                                     and playerGui.Prompt.Blackout.Options:FindFirstChild("Yes")
+    autoAcceptTradeEnabled = enabled
+    if enabled then
+        spawn(function()
+            while autoAcceptTradeEnabled do
+                pcall(function()
+                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                    local yesButton = playerGui and playerGui:FindFirstChild("Prompt") 
+                                     and playerGui.Prompt:FindFirstChild("Blackout") 
+                                     and playerGui.Prompt.Blackout:FindFirstChild("Options") 
+                                     and playerGui.Prompt.Blackout.Options:FindFirstChild("Yes")
 
-                    -- Chỉ click nếu nút đang hiển thị trên màn hình
-                    if yesButton and yesButton.Visible and yesButton.AbsoluteSize.X > 0 then
-                        local x = yesButton.AbsolutePosition.X + (yesButton.AbsoluteSize.X / 2)
-                        local y = yesButton.AbsolutePosition.Y + (yesButton.AbsoluteSize.Y / 2) + 58
-                        
-                        -- Thực hiện click
-                        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-                        task.wait(0.05)
-                        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-                        
-                        print("lh_tapmod: Đang spam click Trade (1s/lần)...")
-                    end
-                end)
-                -- Đợi 1 giây trước khi kiểm tra và click tiếp
-                task.wait(1)
-            end
-        end)
-    end
+                    if yesButton and yesButton.Visible and yesButton.AbsoluteSize.X > 0 then
+                        local x = yesButton.AbsolutePosition.X + (yesButton.AbsoluteSize.X / 2)
+                        local y = yesButton.AbsolutePosition.Y + (yesButton.AbsoluteSize.Y / 2) + 58
+                        
+                        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+                        task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+                        print("lh_tapmod: Spam Trade Click...")
+                    end
+                end)
+                task.wait(1)
+            end
+        end)
+    end
 end)
 
--- Controls (Speed, Jump, etc.)
+-- Controls
 createTextBox("Speed", 16, function(val)
 	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	if h then h.WalkSpeed = val end
