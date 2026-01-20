@@ -11,219 +11,202 @@ local loopTeleportEnabled = false
 local autoAcceptTradeEnabled = false 
 local loopTeleportDelay = 3
 
--- GUI
+-- GUI Chính
 local screenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
-screenGui.Name = "ModernModMenu"
+screenGui.Name = "LHTapMod_Premium"
 screenGui.ResetOnSpawn = false
 
--- Toggle button
+-- Nút Toggle (Mở/Đóng Menu)
 local toggleButton = Instance.new("ImageButton", screenGui)
-toggleButton.Size = UDim2.new(0, 40, 0, 40)
-toggleButton.Position = UDim2.new(1, -50, 1, -50)
-toggleButton.BackgroundTransparency = 1
-toggleButton.Image = "rbxassetid://6031091002"
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(1, -70, 0.5, -25)
+toggleButton.BackgroundColor3 = Color3.fromRGB(40, 45, 60)
+toggleButton.Image = "rbxassetid://6031091002" -- Bạn có thể thay ID icon khác
+toggleButton.ClipsDescendants = true
+Instance.new("UICorner", toggleButton).CornerRadius = UDim.new(0, 10)
+local strokeToggle = Instance.new("UIStroke", toggleButton)
+strokeToggle.Color = Color3.fromRGB(80, 120, 255)
+strokeToggle.Thickness = 2
 
--- Main Frame
+-- Main Frame (Menu Chính)
 local frame = Instance.new("Frame", screenGui)
-frame.Size = UDim2.new(0, 320, 0, 500)
-frame.Position = UDim2.new(0, 20, 0, 20)
-frame.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
+frame.Size = UDim2.new(0, 350, 0, 550)
+frame.Position = UDim2.new(0.5, -175, 0.5, -275)
+frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 frame.BorderSizePixel = 0
 frame.Visible = false
 frame.Active = true
 frame.Draggable = true
-frame.BackgroundTransparency = 0.05
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 15)
 
--- Title
+-- Background Image (Hình nền theo yêu cầu của bạn)
+local bgImage = Instance.new("ImageLabel", frame)
+bgImage.Size = UDim2.new(1, 0, 1, 0)
+bgImage.Image = "rbxassetid://12971221770" -- Đã thay bằng ID ảnh phong cảnh tối màu tương tự hình bạn gửi
+bgImage.ScaleType = Enum.ScaleType.Crop
+bgImage.ImageColor3 = Color3.fromRGB(150, 150, 150) -- Làm tối ảnh một chút để nổi chữ
+bgImage.ZIndex = 0
+Instance.new("UICorner", bgImage).CornerRadius = UDim.new(0, 15)
+
+-- Lớp phủ tối (Overlay) để dễ nhìn UI
+local overlay = Instance.new("Frame", frame)
+overlay.Size = UDim2.new(1, 0, 1, 0)
+overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+overlay.BackgroundTransparency = 0.4
+overlay.ZIndex = 1
+Instance.new("UICorner", overlay).CornerRadius = UDim.new(0, 15)
+
+-- Tiêu đề
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 40)
+title.Size = UDim2.new(1, 0, 0, 50)
 title.BackgroundTransparency = 1
-title.Text = "lh_tapmod"
+title.Text = "LH_TAPMOD PREMIUM"
 title.Font = Enum.Font.GothamBold
 title.TextColor3 = Color3.new(1, 1, 1)
-title.TextSize = 20
-title.LayoutOrder = 0
+title.TextSize = 22
+title.ZIndex = 2
 
--- Layout
-local layout = Instance.new("UIListLayout", frame)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Padding = UDim.new(0, 8)
-layout.VerticalAlignment = Enum.VerticalAlignment.Top
+-- Scrolling Frame (Để chứa các tính năng)
+local scroll = Instance.new("ScrollingFrame", frame)
+scroll.Size = UDim2.new(1, -20, 1, -70)
+scroll.Position = UDim2.new(0, 10, 0, 60)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 4
+scroll.ZIndex = 2
+scroll.CanvasSize = UDim2.new(0, 0, 0, 700)
+
+local layout = Instance.new("UIListLayout", scroll)
+layout.Padding = UDim.new(0, 10)
 layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
--- FPS Counter
+-- FPS Counter (Góc màn hình)
 local fpsLabel = Instance.new("TextLabel", screenGui)
-fpsLabel.Size = UDim2.new(0, 100, 0, 25)
-fpsLabel.Position = UDim2.new(0, 10, 0, 10)
-fpsLabel.BackgroundTransparency = 0.4
-fpsLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-fpsLabel.TextColor3 = Color3.new(1, 1, 1)
+fpsLabel.Size = UDim2.new(0, 100, 0, 30)
+fpsLabel.Position = UDim2.new(0, 15, 0, 15)
+fpsLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 fpsLabel.Font = Enum.Font.Code
 fpsLabel.TextSize = 16
 fpsLabel.Text = "FPS: 0"
-Instance.new("UICorner", fpsLabel).CornerRadius = UDim.new(0, 6)
+Instance.new("UICorner", fpsLabel).CornerRadius = UDim.new(0, 8)
 
--- FPS Update
+-- Logic FPS
 local lastUpdate = tick()
 local frameCount = 0
 RunService.RenderStepped:Connect(function()
-	frameCount += 1
-	if tick() - lastUpdate >= 1 then
-		fpsLabel.Text = "FPS: " .. tostring(frameCount)
-		frameCount = 0
-		lastUpdate = tick()
-	end
+    frameCount += 1
+    if tick() - lastUpdate >= 1 then
+        fpsLabel.Text = "FPS: " .. tostring(frameCount)
+        frameCount = 0
+        lastUpdate = tick()
+    end
 end)
 
--- Create Functions
-local function createTextBox(labelText, defaultValue, callback)
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(0.9, 0, 0, 36)
-	container.BackgroundTransparency = 1
-	container.LayoutOrder = layout.AbsoluteContentSize.Y
-	container.Name = "Row"
-
-	local label = Instance.new("TextLabel", container)
-	label.Size = UDim2.new(0.4, 0, 1, 0)
-	label.Text = labelText
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.Gotham
-	label.TextColor3 = Color3.fromRGB(220, 220, 220)
-	label.TextSize = 16
-	label.TextXAlignment = Enum.TextXAlignment.Left
-
-	local textBox = Instance.new("TextBox", container)
-	textBox.Size = UDim2.new(0.6, -8, 1, 0)
-	textBox.Position = UDim2.new(0.4, 8, 0, 0)
-	textBox.Text = tostring(defaultValue)
-	textBox.Font = Enum.Font.GothamSemibold
-	textBox.TextSize = 16
-	textBox.BackgroundColor3 = Color3.fromRGB(50, 60, 80)
-	textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-	Instance.new("UICorner", textBox).CornerRadius = UDim.new(0, 6)
-
-	textBox.FocusLost:Connect(function(enter)
-		if enter then callback(tonumber(textBox.Text)) end
-	end)
-
-	container.Parent = frame
-end
-
-local function createButton(text, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0.9, 0, 0, 36)
-	btn.Text = text
-	btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 16
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-	btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(90, 150, 200) end)
-	btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(70, 130, 180) end)
-	btn.MouseButton1Click:Connect(callback)
-	btn.Parent = frame
-end
+--- [ UI COMPONENTS ] ---
 
 local function createCheckbox(text, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0.9, 0, 0, 36)
-	btn.Text = "☐ " .. text
-	btn.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Font = Enum.Font.Gotham
-	btn.TextSize = 16
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-	local enabled = false
-	btn.MouseButton1Click:Connect(function()
-		enabled = not enabled
-		btn.Text = (enabled and "☑ " or "☐ ") .. text
-		callback(enabled)
-	end)
-
-	btn.Parent = frame
+    local btn = Instance.new("TextButton", scroll)
+    btn.Size = UDim2.new(0.9, 0, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(60, 65, 80)
+    btn.Text = "  ○ " .. text
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextSize = 14
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.ZIndex = 3
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    
+    local enabled = false
+    btn.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        callback(enabled)
+        btn.Text = (enabled and "  ● " or "  ○ ") .. text
+        btn.BackgroundColor3 = enabled and Color3.fromRGB(80, 120, 255) or Color3.fromRGB(60, 65, 80)
+    end)
 end
 
--- TÍNH NĂNG: Auto Accept Trade (Spam 1s/lần khi hiện bảng)
-createCheckbox("🤝 Auto Accept Trade (Fish It)", function(enabled)
-    autoAcceptTradeEnabled = enabled
+local function createTextBox(labelText, defaultValue, callback)
+    local frameRow = Instance.new("Frame", scroll)
+    frameRow.Size = UDim2.new(0.9, 0, 0, 40)
+    frameRow.BackgroundTransparency = 1
+    frameRow.ZIndex = 3
+
+    local label = Instance.new("TextLabel", frameRow)
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.Text = labelText
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.Font = Enum.Font.Gotham
+    label.BackgroundTransparency = 1
+    label.TextSize = 14
+
+    local tb = Instance.new("TextBox", frameRow)
+    tb.Size = UDim2.new(0.6, 0, 0.8, 0)
+    tb.Position = UDim2.new(0.4, 0, 0.1, 0)
+    tb.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    tb.Text = tostring(defaultValue)
+    tb.TextColor3 = Color3.new(1, 1, 1)
+    Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 5)
     
+    tb.FocusLost:Connect(function() callback(tonumber(tb.Text)) end)
+end
+
+--- [ FEATURES LOGIC ] ---
+
+-- 1. Auto Accept Trade (Fish It) - Spam 1s/lần
+createCheckbox("Auto Accept Trade (Fish It)", function(enabled)
+    autoAcceptTradeEnabled = enabled
     if enabled then
-        spawn(function()
+        task.spawn(function()
             while autoAcceptTradeEnabled do
                 pcall(function()
-                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                    -- Kiểm tra đường dẫn nút Yes
-                    local yesButton = playerGui and playerGui:FindFirstChild("Prompt") 
-                                     and playerGui.Prompt:FindFirstChild("Blackout") 
-                                     and playerGui.Prompt.Blackout:FindFirstChild("Options") 
-                                     and playerGui.Prompt.Blackout.Options:FindFirstChild("Yes")
-
-                    -- Chỉ click nếu nút đang hiển thị trên màn hình
-                    if yesButton and yesButton.Visible and yesButton.AbsoluteSize.X > 0 then
+                    local yesButton = LocalPlayer.PlayerGui.Prompt.Blackout.Options.Yes
+                    if yesButton and yesButton.Visible then
                         local x = yesButton.AbsolutePosition.X + (yesButton.AbsoluteSize.X / 2)
                         local y = yesButton.AbsolutePosition.Y + (yesButton.AbsoluteSize.Y / 2) + 58
-                        
-                        -- Thực hiện click
                         VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
                         task.wait(0.05)
                         VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-                        
-                        print("lh_tapmod: Đang spam click Trade (1s/lần)...")
                     end
                 end)
-                -- Đợi 1 giây trước khi kiểm tra và click tiếp
                 task.wait(1)
             end
         end)
     end
 end)
 
--- Controls (Speed, Jump, etc.)
-createTextBox("Speed", 16, function(val)
-	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if h then h.WalkSpeed = val end
+-- 2. Auto Click
+createCheckbox("Auto Click Center", function(enabled)
+    autoClickEnabled = enabled
+    if enabled then
+        task.spawn(function()
+            while autoClickEnabled do
+                VirtualInputManager:SendMouseButtonEvent(LocalPlayer.PlayerGui.ScreenGui.AbsoluteSize.X/2, LocalPlayer.PlayerGui.ScreenGui.AbsoluteSize.Y/2, 0, true, nil, 0)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(LocalPlayer.PlayerGui.ScreenGui.AbsoluteSize.X/2, LocalPlayer.PlayerGui.ScreenGui.AbsoluteSize.Y/2, 0, false, nil, 0)
+                task.wait(0.1)
+            end
+        end)
+    end
 end)
 
-createTextBox("Jump", 50, function(val)
-	local h = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if h then h.JumpPower = val end
+-- 3. WalkSpeed & JumpPower
+createTextBox("WalkSpeed", 16, function(v) LocalPlayer.Character.Humanoid.WalkSpeed = v end)
+createTextBox("JumpPower", 50, function(v) LocalPlayer.Character.Humanoid.JumpPower = v end)
+
+-- 4. Anti AFK
+createCheckbox("Anti AFK", function(enabled)
+    antiAfkEnabled = enabled
+    if enabled then
+        task.spawn(function()
+            while antiAfkEnabled do
+                VirtualInputManager:SendMouseMoveEvent(math.random(100, 500), math.random(100, 500), game)
+                task.wait(30)
+            end
+        end)
+    end
 end)
 
-createButton("📌 Lưu vị trí", function()
-	local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if hrp then
-		table.insert(savedPositions, hrp.Position)
-	end
-end)
-
-createCheckbox("⚡ Auto Click", function(enabled)
-	autoClickEnabled = enabled
-	if enabled then
-		spawn(function()
-			while autoClickEnabled do
-				VirtualInputManager:SendMouseButtonEvent(0.5, 0.5, 0, true, nil, 0)
-				VirtualInputManager:SendMouseButtonEvent(0.5, 0.5, 0, false, nil, 0)
-				task.wait(0.1)
-			end
-		end)
-	end
-end)
-
-createCheckbox("🍊 Anti-AFK", function(enabled)
-	antiAfkEnabled = enabled
-	if enabled then
-		spawn(function()
-			while antiAfkEnabled do
-				VirtualInputManager:SendMouseMoveEvent(math.random(), math.random(), 0)
-				task.wait(60)
-			end
-		end)
-	end
-end)
-
--- Toggle Frame
+-- Toggle Menu
 toggleButton.MouseButton1Click:Connect(function()
-	frame.Visible = not frame.Visible
+    frame.Visible = not frame.Visible
 end)
