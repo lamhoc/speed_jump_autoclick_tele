@@ -145,50 +145,55 @@ local function createCheckbox(text, callback)
 	btn.Parent = frame
 end
 
--- TÍNH NĂNG MỚI: Auto Accept Trade (Fish It) - Click 2 lần cách nhau 2s
+-- TÍNH NĂNG FIX: Auto Accept Trade (Fish It) - Chạy mọi lúc khi hiện bảng
 createCheckbox("🤝 Auto Accept Trade (Fish It)", function(enabled)
     autoAcceptTradeEnabled = enabled
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    
-    local function doSmartClick(button)
-        if autoAcceptTradeEnabled and button.Visible and button.AbsoluteSize.X > 0 then
-            local x = button.AbsolutePosition.X + (button.AbsoluteSize.X / 2)
-            local y = button.AbsolutePosition.Y + (button.AbsoluteSize.Y / 2) + 58
-            
-            -- Click lần 1
-            print("lh_tapmod: Đang Click lần 1...")
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-            task.wait(0.05)
-            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-            
-            -- Chờ 2 giây theo yêu cầu
-            task.wait(2)
-            
-            -- Kiểm tra lại nút trước khi click lần 2 (đề phòng bảng đã đóng)
-            if autoAcceptTradeEnabled and button.Visible then
-                print("lh_tapmod: Đang Click lần 2 sau 2 giây...")
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-                task.wait(0.05)
-                VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-            end
-        end
-    end
+    local isClicking = false -- Biến khóa để tránh chạy chồng lên nhau
 
-    pcall(function()
-        local yesButton = playerGui:FindFirstChild("Prompt").Blackout.Options.Yes
-        
-        -- Lắng nghe sự kiện hiện bảng
-        yesButton:GetPropertyChangedSignal("Visible"):Connect(function()
-            if yesButton.Visible then
-                task.spawn(function() doSmartClick(yesButton) end)
+    if enabled then
+        spawn(function()
+            while autoAcceptTradeEnabled do
+                pcall(function()
+                    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                    local yesButton = playerGui and playerGui:FindFirstChild("Prompt") 
+                                     and playerGui.Prompt:FindFirstChild("Blackout") 
+                                     and playerGui.Prompt.Blackout:FindFirstChild("Options") 
+                                     and playerGui.Prompt.Blackout.Options:FindFirstChild("Yes")
+
+                    -- Nếu thấy nút hiện và script ĐANG KHÔNG trong quá trình click
+                    if yesButton and yesButton.Visible and not isClicking then
+                        isClicking = true -- Khóa lại để thực hiện chuỗi click
+                        
+                        local x = yesButton.AbsolutePosition.X + (yesButton.AbsoluteSize.X / 2)
+                        local y = yesButton.AbsolutePosition.Y + (yesButton.AbsoluteSize.Y / 2) + 58
+                        
+                        -- Click lần 1
+                        print("lh_tapmod: Phát hiện Trade! Click lần 1...")
+                        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+                        task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+                        
+                        -- Chờ 2 giây
+                        task.wait(2)
+                        
+                        -- Click lần 2 (nếu bảng vẫn còn đó)
+                        if yesButton.Visible then
+                            print("lh_tapmod: Click lần 2...")
+                            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+                            task.wait(0.05)
+                            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+                        end
+                        
+                        -- Sau khi click xong 2 lần, đợi bảng biến mất hẳn mới mở khóa
+                        repeat task.wait(0.5) until not yesButton.Visible
+                        isClicking = false -- Mở khóa để sẵn sàng cho lần trade sau
+                        print("lh_tapmod: Sẵn sàng cho lượt trade tiếp theo.")
+                    end
+                end)
+                task.wait(0.5) -- Kiểm tra sự hiện diện của bảng mỗi 0.5s
             end
         end)
-        
-        -- Kiểm tra nếu đang hiện sẵn
-        if yesButton.Visible then
-            task.spawn(function() doSmartClick(yesButton) end)
-        end
-    end)
+    end
 end)
 
 -- Controls (Speed, Jump, etc.)
