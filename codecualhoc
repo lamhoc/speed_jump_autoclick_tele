@@ -8,6 +8,7 @@ local savedPositions = {}
 local autoClickEnabled = false
 local antiAfkEnabled = false
 local loopTeleportEnabled = false
+local autoAcceptTradeEnabled = false -- Biến kiểm soát trade mới
 local loopTeleportDelay = 3
 
 -- GUI
@@ -213,24 +214,24 @@ end)
 createCheckbox("🔁 Loop Teleport", function(enabled)
 	loopTeleportEnabled = enabled
 	if enabled then
-    spawn(function()
-        local index = 1
-        while loopTeleportEnabled do
-            if #savedPositions > 0 then
-                local pos = savedPositions[index]
-                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if hrp and pos then
-                    hrp.CFrame = CFrame.new(pos)
-                end
-                index = index + 1
-                if index > #savedPositions then index = 1 end
-                task.wait(tonumber(loopTeleportDelay) or 3)
-            else
-                task.wait(1)
-            end
-        end
-    end)
-end
+		spawn(function()
+			local index = 1
+			while loopTeleportEnabled do
+				if #savedPositions > 0 then
+					local pos = savedPositions[index]
+					local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+					if hrp and pos then
+						hrp.CFrame = CFrame.new(pos)
+					end
+					index = index + 1
+					if index > #savedPositions then index = 1 end
+					task.wait(tonumber(loopTeleportDelay) or 3)
+				else
+					task.wait(1)
+				end
+			end
+		end)
+	end
 end)
 
 createCheckbox("⚡ Auto Click", function(enabled)
@@ -241,6 +242,40 @@ createCheckbox("⚡ Auto Click", function(enabled)
 				VirtualInputManager:SendMouseButtonEvent(0.5, 0.5, 0, true, nil, 0)
 				VirtualInputManager:SendMouseButtonEvent(0.5, 0.5, 0, false, nil, 0)
 				task.wait(0.1)
+			end
+		end)
+	end
+end)
+
+-- TÍNH NĂNG MỚI: Auto Accept Trade (Fish It)
+createCheckbox("🤝 Auto Accept Trade (Fish It)", function(enabled)
+	autoAcceptTradeEnabled = enabled
+	if enabled then
+		spawn(function()
+			while autoAcceptTradeEnabled do
+				pcall(function()
+					local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+					if playerGui then
+						-- Đường dẫn chính xác đã tìm thấy từ console của bạn
+						local prompt = playerGui:FindFirstChild("Prompt")
+						local blackout = prompt and prompt:FindFirstChild("Blackout")
+						local options = blackout and blackout:FindFirstChild("Options")
+						local yesButton = options and options:FindFirstChild("Yes")
+
+						if yesButton and yesButton.Visible and yesButton.AbsoluteSize.X > 0 then
+							-- Tính toán tọa độ nút Yes trên màn hình
+							local x = yesButton.AbsolutePosition.X + (yesButton.AbsoluteSize.X / 2)
+							local y = yesButton.AbsolutePosition.Y + (yesButton.AbsoluteSize.Y / 2) + 58
+							
+							-- Ép nhấn tọa độ vật lý
+							VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+							task.wait(0.05)
+							VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+							print("lh_tapmod: Đã tự động nhấn Trade Yes")
+						end
+					end
+				end)
+				task.wait(0.5) -- Kiểm tra mỗi 0.5 giây
 			end
 		end)
 	end
