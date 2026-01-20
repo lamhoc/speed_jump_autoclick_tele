@@ -145,52 +145,36 @@ local function createCheckbox(text, callback)
 	btn.Parent = frame
 end
 
--- TÍNH NĂNG FIX: Auto Accept Trade (Fish It) - Chạy mọi lúc khi hiện bảng
+-- TÍNH NĂNG: Auto Accept Trade (Spam 1s/lần khi hiện bảng)
 createCheckbox("🤝 Auto Accept Trade (Fish It)", function(enabled)
     autoAcceptTradeEnabled = enabled
-    local isClicking = false -- Biến khóa để tránh chạy chồng lên nhau
-
+    
     if enabled then
         spawn(function()
             while autoAcceptTradeEnabled do
                 pcall(function()
                     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                    -- Kiểm tra đường dẫn nút Yes
                     local yesButton = playerGui and playerGui:FindFirstChild("Prompt") 
                                      and playerGui.Prompt:FindFirstChild("Blackout") 
                                      and playerGui.Prompt.Blackout:FindFirstChild("Options") 
                                      and playerGui.Prompt.Blackout.Options:FindFirstChild("Yes")
 
-                    -- Nếu thấy nút hiện và script ĐANG KHÔNG trong quá trình click
-                    if yesButton and yesButton.Visible and not isClicking then
-                        isClicking = true -- Khóa lại để thực hiện chuỗi click
-                        
+                    -- Chỉ click nếu nút đang hiển thị trên màn hình
+                    if yesButton and yesButton.Visible and yesButton.AbsoluteSize.X > 0 then
                         local x = yesButton.AbsolutePosition.X + (yesButton.AbsoluteSize.X / 2)
                         local y = yesButton.AbsolutePosition.Y + (yesButton.AbsoluteSize.Y / 2) + 58
                         
-                        -- Click lần 1
-                        print("lh_tapmod: Phát hiện Trade! Click lần 1...")
+                        -- Thực hiện click
                         VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
                         task.wait(0.05)
                         VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
                         
-                        -- Chờ 2 giây
-                        task.wait(2)
-                        
-                        -- Click lần 2 (nếu bảng vẫn còn đó)
-                        if yesButton.Visible then
-                            print("lh_tapmod: Click lần 2...")
-                            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-                            task.wait(0.05)
-                            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-                        end
-                        
-                        -- Sau khi click xong 2 lần, đợi bảng biến mất hẳn mới mở khóa
-                        repeat task.wait(0.5) until not yesButton.Visible
-                        isClicking = false -- Mở khóa để sẵn sàng cho lần trade sau
-                        print("lh_tapmod: Sẵn sàng cho lượt trade tiếp theo.")
+                        print("lh_tapmod: Đang spam click Trade (1s/lần)...")
                     end
                 end)
-                task.wait(0.5) -- Kiểm tra sự hiện diện của bảng mỗi 0.5s
+                -- Đợi 1 giây trước khi kiểm tra và click tiếp
+                task.wait(1)
             end
         end)
     end
