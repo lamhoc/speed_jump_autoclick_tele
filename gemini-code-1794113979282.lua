@@ -38,14 +38,18 @@ genv.KaitunConfig = genv.KaitunConfig or {
         
         -- Danh sách Consumable tùy chỉnh theo từng Tier và MinAmount cụ thể
         Consumables = {
-            { Class = "Consumable", Id = "Halloween Games Lantern", Tier = 1, MinAmount = 100 },
-            { Class = "Consumable", Id = "Halloween Games Lantern", Tier = 2, MinAmount = 10 },
-            { Class = "Consumable", Id = "Halloween Games Lucky Charm", Tier = 1, MinAmount = 100 },
-            { Class = "Consumable", Id = "Halloween Games Lucky Charm", Tier = 2, MinAmount = 10 },
-            { Class = "Consumable", Id = "Halloween Games Treat Magnet", Tier = 1, MinAmount = 100 },
-            { Class = "Consumable", Id = "Halloween Games Treat Magnet", Tier = 2, MinAmount = 10 },
-            { Class = "Consumable", Id = "Halloween Games Broomstick", Tier = 1, MinAmount = 100 },
-            { Class = "Consumable", Id = "Halloween Games Broomstick", Tier = 2, MinAmount = 10 },
+            { Class = "Consumable", Id = "Halloween Games Lantern", Tier = 1, MinAmount = 500 },
+            { Class = "Consumable", Id = "Halloween Games Lantern", Tier = 2, MinAmount = 50 },
+            { Class = "Consumable", Id = "Halloween Games Lantern", Tier = 3, MinAmount = 10 },
+            { Class = "Consumable", Id = "Halloween Games Lucky Charm", Tier = 1, MinAmount = 600 },
+            { Class = "Consumable", Id = "Halloween Games Lucky Charm", Tier = 2, MinAmount = 50 },
+            { Class = "Consumable", Id = "Halloween Games Lucky Charm", Tier = 3, MinAmount = 10 },
+            { Class = "Consumable", Id = "Halloween Games Treat Magnet", Tier = 1, MinAmount = 600 },
+            { Class = "Consumable", Id = "Halloween Games Treat Magnet", Tier = 2, MinAmount = 20 },
+            { Class = "Consumable", Id = "Halloween Games Treat Magnet", Tier = 3, MinAmount = 10 },
+            { Class = "Consumable", Id = "Halloween Games Broomstick", Tier = 1, MinAmount = 1000 },
+            { Class = "Consumable", Id = "Halloween Games Broomstick", Tier = 2, MinAmount = 500 },
+            { Class = "Consumable", Id = "Halloween Games Broomstick", Tier = 3, MinAmount = 20 },
         }
     },
 
