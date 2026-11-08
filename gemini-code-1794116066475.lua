@@ -33,7 +33,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     -- 5. Auto Mail (Đủ đồ là gửi ngay lập tức) & Auto Claim Mail
     Mail = {
         Enabled = true,
-        Recipient = "DienTenAccNhanVaoDay", -- ⚠️ ĐIỀN USERNAME ACC NHẬN
+        Recipient = "Kizmoii_VNG", -- ⚠️ ĐIỀN USERNAME ACC NHẬN
         AutoClaimMail = true,               -- Tự động nhận tất cả thư gửi đến (Claim All)
         MinDiamondsToKeep = 50000,          -- Giữ lại 50k Diamonds làm phí gửi thư
         SendAllHuges = true,                -- Tự động gửi tất cả Huge khi có trong kho
@@ -57,8 +57,8 @@ genv.KaitunConfig = genv.KaitunConfig or {
 
     -- 6. Discord Webhook Thông Báo
     Webhook = {
-        Enabled = false,                    -- Đổi thành true để bật thông báo Discord
-        Url = "",                           -- ⚠️ DÁN LINK WEBHOOK CỦA BẠN VÀO ĐÂY
+        Enabled = true,                    -- Đổi thành true để bật thông báo Discord
+        Url = "https://discord.com/api/webhooks/1444485821909569558/ONQp3ZOyvQevUptUSVbLQpkm5SZZDUOEUr0LTZGoYNPeh_NlMwTxeIS8kEre_u7qEvfC",                           -- ⚠️ DÁN LINK WEBHOOK CỦA BẠN VÀO ĐÂY
         NotifyOnHuge = true,
         NotifyOnMail = true,
     },
