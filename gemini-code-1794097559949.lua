@@ -32,7 +32,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     -- 3. Cấu hình Auto Mail (All Huge + 4 Consumables Tier 1-3)
     Mail = {
         Enabled = true,
-        Recipient = "TenAccNhanDoCuaBan", -- ⚠️ ĐIỀN USERNAME ACC NHẬN ĐỒ VÀO ĐÂY!
+        Recipient = "Kizmoii_VNG", -- ⚠️ ĐIỀN USERNAME ACC NHẬN ĐỒ VÀO ĐÂY!
         CheckInterval = 60,               -- Kiểm tra hòm đồ mỗi 60 giây
         MinDiamondsToKeep = 50000,        -- Giữ lại tối thiểu 50k Diamonds làm phí gửi thư
         SendAllHuges = true,              -- Tự động gửi tất cả Huge (trừ Huge đang bị khóa nếu muốn)
