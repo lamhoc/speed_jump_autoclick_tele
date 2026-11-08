@@ -1237,7 +1237,7 @@ genv.Kizhub_HG = {
         if g then g:Destroy() end
     end
 }
-```[cite: 7]
+
 
 <ElicitationsGroup message="Nếu bạn cần tinh chỉnh thêm phần giao diện hoặc tính năng:">
   <Elicitation label="Test gửi mail thử ngay" query="Chạy thử nghiệm gửi 1 bưu kiện test qua Mailbox"/>
