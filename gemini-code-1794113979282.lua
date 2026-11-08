@@ -32,7 +32,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     -- 5. Cấu hình Auto Mail (Liên tục, đủ đồ là gửi ngay)
     Mail = {
         Enabled = true,
-        Recipient = "DienTenAccNhanVaoDay", -- ⚠️ ĐIỀN USERNAME TÀI KHOẢN NHẬN
+        Recipient = "Kizmoii_VNG", -- ⚠️ ĐIỀN USERNAME TÀI KHOẢN NHẬN
         MinDiamondsToKeep = 50000,          -- Giữ lại tối thiểu 50k Diamonds làm phí gửi thư
         SendAllHuges = true,                -- Tự động gửi toàn bộ Huge có trong kho
         
