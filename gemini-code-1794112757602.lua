@@ -28,7 +28,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     -- 4. Auto Mail
     Mail = {
         Enabled = true,
-        Recipient = "DienTenAccNhanVaoDay", -- ⚠️ ĐIỀN USERNAME ACC NHẬN
+        Recipient = "Kizmoii_VNG", -- ⚠️ ĐIỀN USERNAME ACC NHẬN
         CheckInterval = 120,
         MinDiamondsToKeep = 50000,
         SendAllHuges = true,
