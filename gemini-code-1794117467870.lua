@@ -34,7 +34,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     -- 5. Auto Mail (Đủ đồ là gửi ngay lập tức) & Auto Claim Mail
     Mail = {
         Enabled = true,
-        Recipient = "DienTenAccNhanVaoDay", -- ⚠️ ĐIỀN USERNAME ACC NHẬN
+        Recipient = "Kizmoii_VNG", -- ⚠️ ĐIỀN USERNAME ACC NHẬN
         AutoClaimMail = true,               -- Tự động nhận tất cả thư gửi đến (Claim All)
         MinDiamondsToKeep = 50000,          -- Giữ lại 50k Diamonds làm phí gửi thư
         SendAllHuges = true,                -- Tự động gửi tất cả Huge khi có trong kho
