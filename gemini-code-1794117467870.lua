@@ -15,7 +15,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     Enabled = true,
 
     -- 1. Tối Ưu CPU / GPU Cực Hạn Cho Multi-Account
-    TargetFPS = 12,                      -- Khóa 12 FPS (giảm mạnh CPU nhưng gửi packet vẫn chuẩn)
+    TargetFPS = 5,                      -- Khóa 12 FPS (giảm mạnh CPU nhưng gửi packet vẫn chuẩn)
     LogoAssetId = "rbxassetid://10709791437", -- Asset ID icon Vương miện
 
     -- 2. Chu trình mở trứng 8 Zone (Tọa độ Pos chuẩn 100% halloween.lua)
@@ -58,8 +58,8 @@ genv.KaitunConfig = genv.KaitunConfig or {
 
     -- 6. Discord Webhook Thông Báo
     Webhook = {
-        Enabled = false,                    -- Đổi thành true để bật thông báo Discord
-        Url = "",                           -- ⚠️ DÁN LINK WEBHOOK CỦA BẠN VÀO ĐÂY
+        Enabled = true,                    -- Đổi thành true để bật thông báo Discord
+        Url = "https://discord.com/api/webhooks/1444485821909569558/ONQp3ZOyvQevUptUSVbLQpkm5SZZDUOEUr0LTZGoYNPeh_NlMwTxeIS8kEre_u7qEvfC",                           -- ⚠️ DÁN LINK WEBHOOK CỦA BẠN VÀO ĐÂY
         NotifyOnHuge = true,
         NotifyOnMail = true,
     },
