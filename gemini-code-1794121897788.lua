@@ -15,7 +15,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     Enabled = true,
 
     -- 1. Tối Ưu CPU / GPU Cực Hạn Cho Multi-Account
-    TargetFPS = 5,                      -- Khóa 10 FPS (giảm mạnh CPU, giữ ping mạng ổn định chống timeout)
+    TargetFPS = 10,                      -- Khóa 10 FPS (giảm mạnh CPU, giữ ping mạng ổn định chống timeout)
     LogoAssetId = "rbxassetid://10709791437", -- Asset ID icon Vương miện
 
     -- 2. Quà tặng miễn phí (Free Gifts)
