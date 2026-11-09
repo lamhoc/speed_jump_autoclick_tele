@@ -1,6 +1,6 @@
 -- =========================================================================
 -- PS99 KAITUN: HALLOWEEN GAMES (GUI FIXED • SMART WATCHDOG • AUTO-MAIL FINAL)
--- Cập nhật: Auto Combine 100%, Watchdog 7p, Auto Gifts & Buffs, CPU Optimized
+-- Cập nhật: Black Screen Mode, Auto Flags, Fix Tràn Chữ, Fix Treat Upgrades
 -- =========================================================================
 
 local genv = (type(getgenv) == "function" and getgenv()) or _G
@@ -50,6 +50,8 @@ genv.KaitunConfig = genv.KaitunConfig or {
         Toys = true,
         Fruits = true,
         Potions = true,
+        Flags = true,
+        PreferredFlags = { "Coins Flag", "Fortune Flag", "Hasty Flag", "Magnet Flag" },
     },
 }
 local CFG = genv.KaitunConfig
@@ -184,6 +186,8 @@ local G = {
     Directory         = req("Library.Directory"),
     Items             = req("Library.Items"),
     FFlags            = req("Library.Client.FFlags", true),
+    ZoneFlagCmds      = req("Library.Client.ZoneFlagCmds", true),
+    FlexibleFlagCmds  = req("Library.Client.FlexibleFlagCmds", true),
 }
 
 -- ================= BẢNG HẰNG SỐ & KHU VỰC =================
@@ -235,6 +239,7 @@ local state = {
     nextToyAt = 0,
     nextFruitAt = 0,
     nextPotionAt = 0,
+    nextFlagAt = 0,
     nextClaimGiftsAt = 0,
     currentZoneNumber = 1,
 }
@@ -510,29 +515,40 @@ pcall(function()
     end
 end)
 
--- ================= GUI KIZCARD (CỐ ĐỊNH GÓC PHẢI TRÊN) =================
+-- ================= GUI KIZCARD & BLACK SCREEN MODE =================
 local uiRefs = {}
 pcall(function()
     local parentGui = (type(gethui) == "function" and gethui()) or (syn and syn.protect_gui and CoreGui) or CoreGui
-    local oldGui = parentGui:FindFirstChild("Kizhub_WhiteScreen")
+    local oldGui = parentGui:FindFirstChild("Kizhub_BlackScreen") or parentGui:FindFirstChild("Kizhub_WhiteScreen")
     if oldGui then oldGui:Destroy() end
 
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "Kizhub_WhiteScreen"
+    ScreenGui.Name = "Kizhub_BlackScreen"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.DisplayOrder = 999999
     ScreenGui.Parent = parentGui
+
+    -- Background Đen hoàn toàn thay thế White Screen
+    local BlackBackground = Instance.new("Frame", ScreenGui)
+    BlackBackground.Name = "BlackBackground"
+    BlackBackground.Size = UDim2.new(1, 0, 1, 0)
+    BlackBackground.Position = UDim2.new(0, 0, 0, 0)
+    BlackBackground.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    BlackBackground.BorderSizePixel = 0
+    BlackBackground.ZIndex = 0
 
     local KizCard = Instance.new("Frame")
     KizCard.Name = "KizCard"
     KizCard.AnchorPoint = Vector2.new(1, 0)
     KizCard.Position = UDim2.new(1, -20, 0, 20)
-    KizCard.Size = UDim2.new(0, 395, 0, 345)
-    KizCard.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-    KizCard.BackgroundTransparency = 0.15
+    KizCard.Size = UDim2.new(0, 420, 0, 345)
+    KizCard.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+    KizCard.BackgroundTransparency = 0.05
     KizCard.BorderSizePixel = 0
+    KizCard.ClipsDescendants = true -- Chặn chữ lòi ra ngoài viền
     KizCard.Active = true
     KizCard.Draggable = true
+    KizCard.ZIndex = 2
     KizCard.Parent = ScreenGui
 
     Instance.new("UICorner", KizCard).CornerRadius = UDim.new(0, 14)
@@ -543,6 +559,7 @@ pcall(function()
     local HeaderFrame = Instance.new("Frame", KizCard)
     HeaderFrame.Size = UDim2.new(1, 0, 0, 95)
     HeaderFrame.BackgroundTransparency = 1
+    HeaderFrame.ZIndex = 2
 
     local CrownLogo = Instance.new("ImageLabel", HeaderFrame)
     CrownLogo.Name = "CrownLogo"
@@ -551,6 +568,7 @@ pcall(function()
     CrownLogo.BackgroundTransparency = 1
     CrownLogo.Image = CFG.LogoAssetId
     CrownLogo.ScaleType = Enum.ScaleType.Fit
+    CrownLogo.ZIndex = 2
 
     local BrandText = Instance.new("TextLabel", HeaderFrame)
     BrandText.Name = "BrandText"
@@ -562,6 +580,7 @@ pcall(function()
     BrandText.BackgroundTransparency = 1
     BrandText.Position = UDim2.new(0, 18, 0, 68)
     BrandText.Size = UDim2.new(0, 56, 0, 20)
+    BrandText.ZIndex = 2
 
     local TitleInfo = Instance.new("TextLabel", HeaderFrame)
     TitleInfo.Text = "PS99 HALLOWEEN KAITUN"
@@ -572,6 +591,7 @@ pcall(function()
     TitleInfo.BackgroundTransparency = 1
     TitleInfo.Position = UDim2.new(0, 90, 0, 20)
     TitleInfo.Size = UDim2.new(1, -90, 0, 20)
+    TitleInfo.ZIndex = 2
 
     local SubInfo = Instance.new("TextLabel", HeaderFrame)
     SubInfo.Text = "Auto Farm • Auto Combine Huge • VyHub Upgrades"
@@ -582,17 +602,20 @@ pcall(function()
     SubInfo.BackgroundTransparency = 1
     SubInfo.Position = UDim2.new(0, 90, 0, 42)
     SubInfo.Size = UDim2.new(1, -90, 0, 16)
+    SubInfo.ZIndex = 2
 
     local SepLine = Instance.new("Frame", KizCard)
     SepLine.Size = UDim2.new(1, -36, 0, 1)
     SepLine.Position = UDim2.new(0, 18, 0, 92)
     SepLine.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
     SepLine.BorderSizePixel = 0
+    SepLine.ZIndex = 2
 
     local InfoContainer = Instance.new("Frame", KizCard)
     InfoContainer.Size = UDim2.new(1, -36, 1, -102)
     InfoContainer.Position = UDim2.new(0, 18, 0, 100)
     InfoContainer.BackgroundTransparency = 1
+    InfoContainer.ZIndex = 2
 
     local function createRow(labelText, defaultVal, yPos, highlightColor)
         local lbl = Instance.new("TextLabel", InfoContainer)
@@ -604,6 +627,7 @@ pcall(function()
         lbl.BackgroundTransparency = 1
         lbl.Position = UDim2.new(0, 0, 0, yPos)
         lbl.Size = UDim2.new(0, 135, 0, 18)
+        lbl.ZIndex = 2
 
         local val = Instance.new("TextLabel", InfoContainer)
         val.Text = defaultVal
@@ -611,9 +635,11 @@ pcall(function()
         val.TextSize = 12
         val.TextColor3 = highlightColor or Color3.fromRGB(255, 255, 255)
         val.TextXAlignment = Enum.TextXAlignment.Left
+        val.TextTruncate = Enum.TextTruncate.AtEnd -- Cắt ngắn gọn nếu quá dài, chống lòi ra ngoài
         val.BackgroundTransparency = 1
         val.Position = UDim2.new(0, 135, 0, yPos)
         val.Size = UDim2.new(1, -135, 0, 18)
+        val.ZIndex = 2
         return val
     end
 
@@ -633,6 +659,7 @@ pcall(function()
     UpgTitle.BackgroundTransparency = 1
     UpgTitle.Position = UDim2.new(0, 0, 0, 134)
     UpgTitle.Size = UDim2.new(1, 0, 0, 18)
+    UpgTitle.ZIndex = 2
 
     uiRefs.UpgradesLabel = Instance.new("TextLabel", InfoContainer)
     uiRefs.UpgradesLabel.Text = "Đang đọc dữ liệu nâng cấp..."
@@ -645,6 +672,7 @@ pcall(function()
     uiRefs.UpgradesLabel.BackgroundTransparency = 1
     uiRefs.UpgradesLabel.Position = UDim2.new(0, 0, 0, 154)
     uiRefs.UpgradesLabel.Size = UDim2.new(1, 0, 0, 85)
+    uiRefs.UpgradesLabel.ZIndex = 2
 end)
 
 -- ================= QUẢN LÝ INSTANCE HALLOWEEN =================
@@ -654,6 +682,18 @@ local function currentInstanceId()
         if type(id) == "string" and id ~= "" then return id end
     end
     return nil
+end
+
+local function instanceModel()
+    if isfn(G.Instancing, "GetModel") then
+        local m = gval(G.Instancing.GetModel)
+        if typeof(m) == "Instance" then return m end
+    end
+    local id = currentInstanceId()
+    local things = workspace:FindFirstChild("__THINGS")
+    local cont = things and things:FindFirstChild("__INSTANCE_CONTAINER")
+    local act = cont and cont:FindFirstChild("Active")
+    return act and id and act:FindFirstChild(id) or nil
 end
 
 local function isPhysicallyInHalloweenMap()
@@ -944,7 +984,7 @@ local function collectOrbsTick()
     end
 end
 
--- ================= TREAT UPGRADES (VYHUB LOGIC) =================
+-- ================= TREAT UPGRADES (VYHUB LOGIC SỬA LỖI MODEL & READ TIER) =================
 local function upgradeDir(id)
     local ok, d = pcall(function() return type(G.EventUpgrades) == "table" and G.EventUpgrades[id] or nil end)
     return ok and type(d) == "table" and d or nil
@@ -952,16 +992,43 @@ end
 
 local function upgradeTier(id)
     if isfn(G.EventUpgradeCmds, "GetTier") then
-        local t = gval(G.EventUpgradeCmds.GetTier, id)
-        if type(t) == "number" then return t end
+        local ok, t = pcall(G.EventUpgradeCmds.GetTier, id)
+        if ok and type(t) == "number" then return t end
     end
     local s = getSave()
-    return s and type(s.EventUpgrades) == "table" and (s.EventUpgrades[id] or 0) or 0
+    if s then
+        if type(s.EventUpgrades) == "table" then
+            local val = s.EventUpgrades[id]
+            if type(val) == "number" then return val end
+            if type(val) == "table" then
+                local num = val.Tier or val.tier or val._tier or val._am or val[1]
+                if type(num) == "number" then return num end
+            end
+        end
+        local iv = s.InstanceVars and s.InstanceVars[K.INSTANCE_ID]
+        if iv and type(iv.EventUpgrades) == "table" then
+            local val = iv.EventUpgrades[id]
+            if type(val) == "number" then return val end
+            if type(val) == "table" then
+                local num = val.Tier or val.tier or val._tier or val._am or val[1]
+                if type(num) == "number" then return num end
+            end
+        end
+        if iv and type(iv.Upgrades) == "table" then
+            local val = iv.Upgrades[id]
+            if type(val) == "number" then return val end
+            if type(val) == "table" then
+                local num = val.Tier or val.tier or val._tier or val._am or val[1]
+                if type(num) == "number" then return num end
+            end
+        end
+    end
+    return 0
 end
 
 local function upgradeInfo(u)
     local d = upgradeDir(u.Id)
-    local tier = upgradeTier(u.Id)
+    local tier = tonumber(upgradeTier(u.Id)) or 0
     local maxTier = d and type(d.TierPowers) == "table" and #d.TierPowers or 5
     local cost
     if d and tier < maxTier then
@@ -983,17 +1050,24 @@ local function upgradeInfo(u)
     return { tier = tier, max = maxTier, cost = cost, power = power, disabled = (d == nil) or d.Disabled == true or not onSale, dir = d }
 end
 
-local function machineStandPos()
-    local id = currentInstanceId()
-    local things = workspace:FindFirstChild("__THINGS")
-    local cont = things and things:FindFirstChild("__INSTANCE_CONTAINER")
-    local act = cont and cont:FindFirstChild("Active")
-    local m = act and id and act:FindFirstChild(id) or nil
-    
+local function upgradeMachineModel()
+    if isfn(G.MachineCmds, "GetModels") then
+        local ok, models = gcall(G.MachineCmds.GetModels, K.UPGRADE_MACHINE)
+        if ok and type(models) == "table" then
+            local m = instanceModel()
+            for _, mod in pairs(models) do
+                if typeof(mod) == "Instance" and (not m or mod:IsDescendantOf(m)) then return mod end
+            end
+        end
+    end
+    local m = instanceModel()
     local inter = m and m:FindFirstChild("INTERACT")
     local machines = inter and inter:FindFirstChild("Machines")
-    local mach = machines and machines:FindFirstChild(K.UPGRADE_MACHINE)
-    
+    return machines and machines:FindFirstChild(K.UPGRADE_MACHINE) or nil
+end
+
+local function machineStandPos()
+    local mach = upgradeMachineModel()
     if not mach then return nil end
     local pad = mach:FindFirstChild("Pad", true)
     if pad and pad:IsA("BasePart") then return pad.Position + Vector3.new(0, 3, 0), mach:GetPivot().Position end
@@ -1063,8 +1137,9 @@ local function checkAndRunTreatUpgrades()
         local bought = 0
         while (state and state.alive) and cand and bought < 12 do
             local ok, res = netInvoke("EventUpgrades: Purchase", cand.u.Id)
-            if not ok then break end
+            if not (ok and res == true) then break end
             bought = bought + 1
+            state.lastSuccessfulHatch = os.clock()
             task.wait(0.6)
             cand = pickUpgrade()
         end
@@ -1151,7 +1226,8 @@ local function combineRecipes()
                 local need, have = ingredientNeed(dir, ing), ingredientHave(dir, ing)
                 if have < need then
                     ready = false
-                    missing[#missing + 1] = string.format("%s %d/%d", tostring(gval(function() return ing.Item:GetId() end) or "?"), have, need)
+                    local ingName = tostring(gval(function() return ing.Item:GetId() end) or "?"):gsub("Halloween ", ""):gsub("Masquerade ", "")
+                    missing[#missing + 1] = string.format("%s %d/%d", ingName, have, need)
                 end
             end
             out[#out + 1] = {
@@ -1238,6 +1314,7 @@ local function checkAndRunCombine()
 
     if #readyClaims == 0 and #starts == 0 then
         if #waiting > 0 then
+            -- Giữ chuỗi ngắn gọn, tránh tràn GUI
             state.combineStatus = "Thiếu: " .. waiting[1]
         elseif state.combineStatus == "Rảnh" or state.combineStatus == "Đang Claim Huge" then
             state.combineStatus = "Chờ nguyên liệu"
@@ -1277,7 +1354,7 @@ local function checkAndRunCombine()
                 local okS, resS = netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index)
                 if okS and resS then
                     local durMin = r.duration and math.floor(r.duration / 60) or 0
-                    state.combineStatus = string.format("Đang ghép %s (%dp)", r.name, durMin)
+                    state.combineStatus = string.format("Đang ghép %s (%dp)", r.name:gsub("Halloween ", ""):gsub("Huge ", ""), durMin)
                     sendWebhook("🛠️ BẮT ĐẦU GHÉP HUGE", string.format("Bắt đầu mẻ ghép **%s** (Thời gian: %d phút)", r.name, durMin), 0x00E676)
                 else
                     state.combineStatus = "Ghép lỗi: " .. tostring(resS)
@@ -1303,6 +1380,66 @@ local function checkAndClaimFreeGifts()
         for i = 1, 12 do
             netInvoke("Redeem Free Gift", i)
             task.wait(0.12)
+        end
+    end)
+end
+
+-- ================= AUTO CẮM CỜ (ZONE FLAGS & FLEXIBLE FLAGS) =================
+local function runAutoFlags()
+    local bCfg = CFG.AutoBuffs
+    if not (bCfg and bCfg.Flags) or not inEvent() then return end
+    local now = os.clock()
+    if now < state.nextFlagAt then return end
+    state.nextFlagAt = now + 120 -- Kiểm tra mỗi 2 phút
+
+    pcall(function()
+        local currentZ = state.currentZoneNumber or 1
+        local areaName = "Main_" .. tostring(currentZ)
+        local preferred = bCfg.PreferredFlags or { "Coins Flag", "Fortune Flag", "Hasty Flag", "Magnet Flag" }
+
+        local s = getSave()
+        if not s or not s.Inventory then return end
+
+        local targetFlag = nil
+        local flagUid = nil
+
+        -- Tìm cờ ưu tiên trong Inventory.ZoneFlag hoặc Inventory.Misc
+        local function scanBranch(branch)
+            if type(branch) ~= "table" then return nil, nil end
+            for _, pref in ipairs(preferred) do
+                for uid, item in pairs(branch) do
+                    if type(item) == "table" and type(item.id) == "string" and item.id == pref then
+                        local amt = tonumber(item._am) or 0
+                        if amt > 0 then return item.id, item._uid or uid end
+                    end
+                end
+            end
+            return nil, nil
+        end
+
+        targetFlag, flagUid = scanBranch(s.Inventory.ZoneFlag)
+        if not targetFlag then targetFlag, flagUid = scanBranch(s.Inventory.Misc) end
+
+        if not targetFlag or not flagUid then return end
+
+        -- 1. Thử gọi qua Module Client nếu có
+        local placed = false
+        if isfn(G.ZoneFlagCmds, "Place") then
+            local okP, resP = gcall(G.ZoneFlagCmds.Place, areaName, targetFlag)
+            if okP and resP == true then placed = true end
+        end
+
+        -- 2. Thử gọi Network Remotes (Flags: Consume / FlexibleFlags_Consume)
+        if not placed then
+            local okF = netInvoke("Flags: Consume", areaName, targetFlag)
+            if okF then placed = true end
+        end
+        if not placed then
+            local okFl = netInvoke("FlexibleFlags_Consume", targetFlag)
+            if okFl then placed = true end
+        end
+        if not placed and flagUid then
+            netInvoke("Consumables_Consume", flagUid, 1)
         end
     end)
 end
@@ -1419,7 +1556,7 @@ local function updateKizhubGui()
     pcall(function()
         local upgLines = {}
         for _, u in ipairs(K.UPGRADES) do
-            local tier = upgradeTier(u.Id) or 0
+            local tier = tonumber(upgradeTier(u.Id)) or 0
             local tag = (u.Key == "PetSavings" or u.Key == "BetterVariants") and "[P2]" or "[P1]"
             local tierStr = (tier >= 5) and "MAX" or string.format("%d/5", tier)
             table.insert(upgLines, string.format("%s %s: %s", tag, u.Name:gsub(" %(.*%)", ""), tierStr))
@@ -1563,7 +1700,7 @@ task.spawn(function()
     end
 end)
 
--- Vòng lặp phụ: Upgrades, Ghép Huge, Quà & Buffs (6s)
+-- Vòng lặp phụ: Upgrades, Ghép Huge, Quà, Cắm Cờ & Buffs (6s)
 task.spawn(function()
     while (state and state.alive) do
         pcall(function()
@@ -1573,6 +1710,7 @@ task.spawn(function()
                 checkAndRunCombine()
                 checkAndClaimFreeGifts()
                 runDelayedBuffs()
+                runAutoFlags()
             end
         end)
         task.wait(6)
@@ -1758,7 +1896,6 @@ task.spawn(function()
             else
                 local errStr = string.lower(tostring(resSend))
                 if errStr:find("full") or errStr:find("limit") or errStr:find("max") or errStr:find("recipient") then
-                    -- Bắt lỗi hòm thư đầy: Không đưa vào Blacklist, chờ 10 phút (600s)
                     state.mailStatus = "Hòm thư đích đầy (Chờ 10p)"
                     task.wait(600)
                 elseif errStr:find("soulbound") or errStr:find("untradable") or errStr:find("cannot be traded") or errStr:find("not tradable") then
@@ -1784,7 +1921,7 @@ genv.Kizhub_HG = {
         for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
         for _, fn in ipairs(restoreFns) do pcall(fn) end
         local parentGui = (type(gethui) == "function" and gethui()) or CoreGui
-        local g = parentGui:FindFirstChild("Kizhub_WhiteScreen")
+        local g = parentGui:FindFirstChild("Kizhub_BlackScreen") or parentGui:FindFirstChild("Kizhub_WhiteScreen")
         if g then g:Destroy() end
     end
 }
