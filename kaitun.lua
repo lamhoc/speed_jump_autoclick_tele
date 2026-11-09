@@ -28,7 +28,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     
     AutoTap = {
         Enabled = true,
-        TapDelay = 0.1,
+        TapDelay = 0.2,
     },
 
     AutoTreatUpgrades = true,
@@ -111,6 +111,9 @@ end
 -- ================= TỐI ƯU HÓA ENGINE & CPU (CHO 80 ACC) =================
 pcall(function()
     if type(setfpscap) == "function" then setfpscap(CFG.TargetFPS or 5) end
+    if settings and settings().Rendering then
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    end
 end)
 
 pcall(function()
@@ -146,9 +149,42 @@ pcall(function()
     workspace.DescendantAdded:Connect(stripHeavyVisuals)
 end)
 
+-- Triệt tiêu mô hình Pet client & Animation thừa để giải phóng CPU cho 80 acc
+pcall(function()
+    local things = workspace:FindFirstChild("__THINGS")
+    if things then
+        local pets = things:FindFirstChild("Pets")
+        if pets then
+            for _, p in ipairs(pets:GetChildren()) do pcall(function() p:Destroy() end) end
+            pets.ChildAdded:Connect(function(c)
+                task.defer(function() pcall(function() c:Destroy() end) end)
+            end)
+        end
+    end
+end)
+
+pcall(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local anim = hum and hum:FindFirstChildOfClass("Animator")
+    if anim then
+        for _, t in ipairs(anim:GetPlayingAnimationTracks()) do t:Stop(0) end
+    end
+end)
+
 pcall(function()
     if RunService:IsClient() and type(RunService.Set3dRenderingEnabled) == "function" then
         RunService:Set3dRenderingEnabled(false)
+    end
+end)
+
+-- Thu gom rác bộ nhớ (Garbage Collection) định kỳ mỗi 120s
+task.spawn(function()
+    while true do
+        task.wait(120)
+        pcall(function()
+            collectgarbage("step", 200)
+        end)
     end
 end)
 
@@ -418,8 +454,32 @@ local function forceRejoin(reason)
     task.wait(999)
 end
 
--- ================= HỆ THỐNG ANTI-AFK GOD MODE =================
+-- ================= HỆ THỐNG ANTI-AFK GOD MODE & CHỐNG KICK 15' =================
 local function installGodModeAntiAfk()
+    -- 1. Chặn BigGames gọi TeleportService từ Client để Server Hop sau 15 phút
+    pcall(function()
+        if type(hookfunction) == "function" then
+            local oldTeleport
+            oldTeleport = hookfunction(TeleportService.Teleport, function(self, ...)
+                if not (state and state.isRejoining) then
+                    warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server!")
+                    return
+                end
+                return oldTeleport(self, ...)
+            end)
+
+            local oldTeleportToPlaceInstance
+            oldTeleportToPlaceInstance = hookfunction(TeleportService.TeleportToPlaceInstance, function(self, ...)
+                if not (state and state.isRejoining) then
+                    warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (Instance)!")
+                    return
+                end
+                return oldTeleportToPlaceInstance(self, ...)
+            end)
+        end
+    end)
+
+    -- 2. Vô hiệu hóa Idled Connection của Roblox (Chống kick 20')
     pcall(function()
         if type(getconnections) == "function" then
             for _, c in ipairs(getconnections(LocalPlayer.Idled)) do
@@ -440,8 +500,9 @@ local function installGodModeAntiAfk()
         end)
     end))
 
+    -- 3. Vòng lặp giả lập hoạt động mỗi 35 giây (Đánh tan bộ đếm Idle 15' của BigGames)
     task.spawn(function()
-        local interval = CFG.AfkPulseInterval or 180
+        local interval = CFG.AfkPulseInterval or 35
         while (state and state.alive) do
             task.wait(interval)
             if not (state and state.alive) then break end
@@ -461,7 +522,22 @@ local function installGodModeAntiAfk()
             end)
 
             pcall(function()
+                local cam = workspace.CurrentCamera
+                if cam then
+                    cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(1), 0)
+                end
+            end)
+
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+
+            -- Reset toàn bộ Timer Idle của BigGames trên Server
+            pcall(function()
                 netFire("Idle Tracking: Stop Timer")
+                netFire("Idle Tracking: Focus Changed", true)
+                netFire("Idle Tracking: Update Timer", os.time())
             end)
         end
     end)
@@ -1390,41 +1466,79 @@ local function checkAndRunCombine()
 end
 
 -- ================= AUTO DAYCARE MODULE (CLAIM & SMART ENROLL) =================
+local function daycareStandPos()
+    if isfn(G.MachineCmds, "GetModels") then
+        local ok, models = gcall(G.MachineCmds.GetModels, "Daycare")
+        if ok and type(models) == "table" then
+            for _, m in pairs(models) do
+                if typeof(m) == "Instance" then
+                    local pad = m:FindFirstChild("Pad", true)
+                    if pad and pad:IsA("BasePart") then return pad.Position + Vector3.new(0, 3, 0) end
+                    return m:GetPivot().Position + Vector3.new(0, 3, 6)
+                end
+            end
+        end
+    end
+    local map = workspace:FindFirstChild("Map")
+    local beach = map and map:FindFirstChild("20 | Beach")
+    local inter = beach and beach:FindFirstChild("INTERACT")
+    local machs = inter and inter:FindFirstChild("Machines")
+    local dc = machs and (machs:FindFirstChild("DaycareMachine") or machs:FindFirstChild("Daycare"))
+    if dc then
+        local pad = dc:FindFirstChild("Pad", true)
+        if pad and pad:IsA("BasePart") then return pad.Position + Vector3.new(0, 3, 0) end
+        return dc:GetPivot().Position + Vector3.new(0, 3, 6)
+    end
+    return Vector3.new(130.26, 16.56, 509.21)
+end
+
 local function getDaycareInfo()
     local s = getSave()
-    local dc = s and (s.Daycare or s.DaycareQueue)
-    if type(dc) ~= "table" then
-        return { enrolled = 0, maxSlots = 10, readyToClaim = false, minRemaining = 0 }
+    local active = s and s.DaycareActive
+    local maxSlots = 10
+    if isfn(G.DaycareCmds, "GetMaxSlots") then
+        local okM, m = gcall(G.DaycareCmds.GetMaxSlots)
+        if okM and type(m) == "number" then maxSlots = m end
     end
 
-    local queue = dc.Queue or dc.Pets or dc.Slots or dc
-    local maxSlots = tonumber(dc.MaxSlots or dc.Max or dc.Capacity or s.DaycareSlots) or 10
-
     local enrolled = 0
+    if isfn(G.DaycareCmds, "GetUsedSlots") then
+        local okU, u = gcall(G.DaycareCmds.GetUsedSlots)
+        if okU and type(u) == "number" then enrolled = u end
+    end
+    if enrolled == 0 and type(active) == "table" then
+        for _ in pairs(active) do enrolled = enrolled + 1 end
+    end
+
     local readyToClaim = false
     local minRemaining = math.huge
     local now = os.time()
 
-    for k, v in pairs(queue) do
-        if type(v) == "table" then
-            enrolled = enrolled + 1
-            local readyAt = tonumber(v.ReadyTime or v.ReadyAt or v.ClaimTime or v.EndTime or v.Time)
-            local remain = tonumber(v.Remaining or v.TimeLeft)
-            
-            if readyAt then
-                local diff = readyAt - now
-                if diff <= 0 then
-                    readyToClaim = true
-                    minRemaining = 0
-                else
-                    if diff < minRemaining then minRemaining = diff end
+    if type(active) == "table" then
+        for uid, v in pairs(active) do
+            if type(v) == "table" then
+                local remain = nil
+                if isfn(G.DaycareCmds, "ComputeRemainingTime") then
+                    local okR, r = gcall(G.DaycareCmds.ComputeRemainingTime, v)
+                    if okR and type(r) == "number" then remain = r end
                 end
-            elseif remain then
-                if remain <= 0 then
-                    readyToClaim = true
-                    minRemaining = 0
-                else
-                    if remain < minRemaining then minRemaining = remain end
+
+                if not remain then
+                    local readyAt = tonumber(v.ReadyTime or v.ReadyAt or v.ClaimTime or v.EndTime)
+                    if readyAt then
+                        remain = readyAt - now
+                    elseif tonumber(v.CreationTime) and tonumber(v.CreationAge) then
+                        remain = math.max(0, 21600 - (now - v.CreationTime))
+                    end
+                end
+
+                if remain then
+                    if remain <= 0 then
+                        readyToClaim = true
+                        minRemaining = 0
+                    else
+                        if remain < minRemaining then minRemaining = remain end
+                    end
                 end
             end
         end
@@ -1439,17 +1553,112 @@ local function getDaycareInfo()
     }
 end
 
+local function getPetPower(p)
+    if type(p) ~= "table" or type(p.id) ~= "string" then return 0 end
+    if isfn(G.PetCmds, "GetPower") then
+        local ok, pow = gcall(G.PetCmds.GetPower, p)
+        if ok and type(pow) == "number" then return pow end
+    end
+    if isfn(G.PetCmds, "GetStrength") then
+        local ok, str = gcall(G.PetCmds.GetStrength, p)
+        if ok and type(str) == "number" then return str end
+    end
+    local basePower = 1
+    local dir = (G.Directory and G.Directory.Pets and G.Directory.Pets[p.id]) or (G.Pets and G.Pets[p.id])
+    if type(dir) == "table" then
+        basePower = tonumber(dir.strength or dir.power or dir.damage or dir.BaseDamage) or 1
+    end
+    local mult = 1
+    if p.pt == 1 then mult = mult * 1.5 -- Golden
+    elseif p.pt == 2 then mult = mult * 2.5 -- Rainbow
+    end
+    if p.sh == true then mult = mult * 2.0 -- Shiny
+    end
+    return basePower * mult
+end
+
 local function checkAndRunDaycare()
     if not CFG.AutoDaycare or state.excursion ~= nil then return end
 
     local now = os.clock()
     if now < state.nextDaycareCheckAt then return end
-    state.nextDaycareCheckAt = now + 30 -- Kiểm tra mỗi 30s
+    state.nextDaycareCheckAt = now + 40 -- Kiểm tra mỗi 40s
 
     local dcInfo = getDaycareInfo()
+    local slotsOpen = dcInfo.maxSlots - dcInfo.enrolled
 
-    -- 1. Nếu có pet đã hoàn thành -> Nhận quà Daycare
-    if dcInfo.readyToClaim or (dcInfo.enrolled > 0 and dcInfo.minRemaining <= 0) then
+    local needClaim = dcInfo.readyToClaim or (dcInfo.enrolled > 0 and dcInfo.minRemaining <= 0)
+    local needEnroll = slotsOpen > 0
+
+    if not (needClaim or needEnroll) then
+        if dcInfo.enrolled > 0 then
+            local remMins = math.ceil(dcInfo.minRemaining / 60)
+            local hrs = math.floor(remMins / 60)
+            local mins = remMins % 60
+            if hrs > 0 then
+                state.daycareStatus = string.format("Đang gửi %d/%d (còn %dh %dp)", dcInfo.enrolled, dcInfo.maxSlots, hrs, mins)
+            else
+                state.daycareStatus = string.format("Đang gửi %d/%d (còn %dp)", dcInfo.enrolled, dcInfo.maxSlots, mins)
+            end
+        end
+        return
+    end
+
+    -- Quét danh sách pet thường: Chọn Stat pet MẠNH NHẤT chưa khóa và chưa trang bị
+    local s = getSave()
+    local pets = s and s.Inventory and s.Inventory.Pet
+    local candidates = {}
+    if needEnroll and type(pets) == "table" then
+        for uid, p in pairs(pets) do
+            if type(p) == "table" and type(p.id) == "string" then
+                local isHuge = (p.IsHuge and p:IsHuge()) or p.id:find("Huge ")
+                local isTitanic = p.id:find("Titanic ")
+                local isExclusive = p.id:find("Exclusive")
+                local isLocked = (p.lk == true or p._lk == true)
+                local isEquipped = (p._eq == true or p.eq == true)
+
+                if not (isHuge or isTitanic or isExclusive or isLocked or isEquipped) then
+                    table.insert(candidates, {
+                        uid = uid,
+                        id = p.id,
+                        power = getPetPower(p)
+                    })
+                end
+            end
+        end
+
+        -- Sắp xếp giảm dần theo sức mạnh (Stat pet mạnh nhất luôn được chọn đầu tiên)
+        if #candidates > 1 then
+            table.sort(candidates, function(a, b)
+                return (a.power or 0) > (b.power or 0)
+            end)
+        end
+    end
+
+    if not needClaim and #candidates == 0 then
+        if dcInfo.enrolled == 0 then
+            state.daycareStatus = "Hết pet thường để gửi"
+        end
+        return
+    end
+
+    -- THỰC HIỆN EXCURSION TỚI BỤC DAYCARE (BEACH AREA 20)
+    local savedPos = playerPos()
+    local stand = daycareStandPos()
+    if not stand then return end
+
+    state.excursion = "Daycare"
+    state.daycareStatus = "Đang tới bục Daycare..."
+    teleportTo(stand)
+    task.wait(0.5)
+
+    pcall(function()
+        netFire("Machines: Mark Approached", "Daycare")
+    end)
+    task.wait(0.2)
+
+    -- 1. Claim quà Daycare nếu đã ủ xong
+    if needClaim then
         state.daycareStatus = "Đang nhận quà Daycare..."
         local okC = false
         if isfn(G.DaycareCmds, "Claim") then
@@ -1461,74 +1670,51 @@ local function checkAndRunDaycare()
             if ok and res then okC = true end
         end
         if okC then
-            state.daycareStatus = "Đã nhận quà Daycare"
-            task.wait(1.5)
+            task.wait(0.5)
             dcInfo = getDaycareInfo()
+            slotsOpen = dcInfo.maxSlots - dcInfo.enrolled
         end
     end
 
-    -- 2. Nếu còn slot trống -> Gửi pet thường vào Daycare (Tuyệt đối không gửi Huge/Exclusive)
-    local slotsOpen = dcInfo.maxSlots - dcInfo.enrolled
-    if slotsOpen > 0 then
-        local s = getSave()
-        local pets = s and s.Inventory and s.Inventory.Pet
-        if type(pets) == "table" then
-            local candidates = {}
-            for uid, p in pairs(pets) do
-                if type(p) == "table" and type(p.id) == "string" then
-                    local isHuge = (p.IsHuge and p:IsHuge()) or p.id:find("Huge ")
-                    local isTitanic = p.id:find("Titanic ")
-                    local isExclusive = p.id:find("Exclusive")
-                    local isLocked = (p.lk == true or p._lk == true)
-                    local isEquipped = (p._eq == true or p.eq == true)
+    -- 2. Gửi pet vào slot trống
+    if slotsOpen > 0 and #candidates > 0 then
+        local toEnrollDict = {}
+        local count = math.min(slotsOpen, #candidates)
+        for i = 1, count do
+            toEnrollDict[candidates[i].uid] = 1
+        end
 
-                    if not (isHuge or isTitanic or isExclusive or isLocked or isEquipped) then
-                        table.insert(candidates, { uid = uid, id = p.id })
-                    end
-                end
+        state.daycareStatus = string.format("Đang gửi %d pet...", count)
+        local okE = false
+        local errReason = nil
+
+        local ok, res = netInvoke("Daycare: Enroll", toEnrollDict)
+        if ok and res == true then
+            okE = true
+        else
+            errReason = tostring(res)
+            if isfn(G.DaycareCmds, "Enroll") then
+                local ok2, res2 = gcall(G.DaycareCmds.Enroll, toEnrollDict)
+                if ok2 and res2 then okE = true else errReason = tostring(res2) end
             end
+        end
 
-            if #candidates > 0 then
-                local toEnrollDict = {}
-                local toEnrollList = {}
-                local count = math.min(slotsOpen, #candidates)
-                for i = 1, count do
-                    local cand = candidates[i]
-                    toEnrollDict[cand.uid] = 1
-                    table.insert(toEnrollList, cand.uid)
-                end
-
-                state.daycareStatus = string.format("Đang gửi %d pet...", count)
-                local okE = false
-                if isfn(G.DaycareCmds, "Enroll") then
-                    local ok, res = gcall(G.DaycareCmds.Enroll, toEnrollDict)
-                    if ok and res then okE = true end
-                end
-                if not okE then
-                    local ok, res = netInvoke("Daycare: Enroll", toEnrollDict)
-                    if ok and res then okE = true end
-                end
-                if not okE then
-                    local ok, res = netInvoke("Daycare: Enroll", toEnrollList)
-                    if ok and res then okE = true end
-                end
-
-                if okE then
-                    state.daycareStatus = string.format("Đã gửi %d pet vào Daycare", count)
-                    task.wait(1)
-                    dcInfo = getDaycareInfo()
-                else
-                    state.daycareStatus = "Gửi pet thất bại"
-                end
-            else
-                if dcInfo.enrolled == 0 then
-                    state.daycareStatus = "Hết pet thường để gửi"
-                end
-            end
+        if okE then
+            state.daycareStatus = string.format("Đã gửi %d pet vào Daycare", count)
+            task.wait(0.5)
+            dcInfo = getDaycareInfo()
+        else
+            state.daycareStatus = "Gửi thất bại (" .. tostring(errReason or "Từ chối") .. ")"
         end
     end
 
-    -- 3. Cập nhật trạng thái hiển thị
+    -- 3. Teleport trở lại vị trí farm cũ ngay lập tức
+    if savedPos and (state and state.alive) then
+        teleportTo(savedPos)
+    end
+    state.excursion = nil
+
+    -- 4. Cập nhật nhãn trạng thái hiển thị trên KizCard
     if dcInfo.enrolled > 0 then
         if dcInfo.minRemaining > 0 then
             local remMins = math.ceil(dcInfo.minRemaining / 60)
