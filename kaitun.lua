@@ -22,13 +22,13 @@ genv.KaitunConfig = genv.KaitunConfig or {
     HatchDelay = 1.0,
 
     Watchdog = {
-        Enabled = true,
-        MaxIdleHatchMinutes = 7,
+        Enabled = false,
+        MaxIdleHatchMinutes = 30,
     },
     
     AutoTap = {
         Enabled = true,
-        TapDelay = 0.2,
+        TapDelay = 0.25,
     },
 
     AutoTreatUpgrades = true,
@@ -269,6 +269,7 @@ local state = {
     mailStatus = "Rảnh",
     daycareStatus = "Rảnh",
     lastSuccessfulHatch = os.clock(),
+    nextHatchAttemptAt = 0,
     nextUnlockTryAt = 0,
     nextTreatUpgradeAt = 0,
     nextCombineAt = 0,
@@ -456,8 +457,21 @@ end
 
 -- ================= HỆ THỐNG ANTI-AFK GOD MODE & CHỐNG KICK 15' =================
 local function installGodModeAntiAfk()
-    -- 1. Chặn BigGames gọi TeleportService từ Client để Server Hop sau 15 phút
+    -- 1. Chặn triệt để BigGames gọi TeleportService từ Client để Server Hop sau 15 phút (__namecall & hookfunction)
     pcall(function()
+        if type(hookmetamethod) == "function" then
+            local oldNamecall
+            oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                local method = getnamecallmethod()
+                if (method == "Teleport" or method == "TeleportToPlaceInstance" or method == "teleport" or method == "TeleportToSpawnByName") and typeof(self) == "Instance" and self:IsA("TeleportService") then
+                    if not (state and state.isRejoining) then
+                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (__namecall)!")
+                        return
+                    end
+                end
+                return oldNamecall(self, ...)
+            end)
+        end
         if type(hookfunction) == "function" then
             local oldTeleport
             oldTeleport = hookfunction(TeleportService.Teleport, function(self, ...)
@@ -500,9 +514,9 @@ local function installGodModeAntiAfk()
         end)
     end))
 
-    -- 3. Vòng lặp giả lập hoạt động mỗi 35 giây (Đánh tan bộ đếm Idle 15' của BigGames)
+    -- 3. Chu kỳ nhịp Anti-AFK God Mode chuẩn (180s = 3 phút theo đúng code gốc của dj)
     task.spawn(function()
-        local interval = CFG.AfkPulseInterval or 35
+        local interval = CFG.AfkPulseInterval or 180
         while (state and state.alive) do
             task.wait(interval)
             if not (state and state.alive) then break end
@@ -522,22 +536,7 @@ local function installGodModeAntiAfk()
             end)
 
             pcall(function()
-                local cam = workspace.CurrentCamera
-                if cam then
-                    cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(1), 0)
-                end
-            end)
-
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end)
-
-            -- Reset toàn bộ Timer Idle của BigGames trên Server
-            pcall(function()
                 netFire("Idle Tracking: Stop Timer")
-                netFire("Idle Tracking: Focus Changed", true)
-                netFire("Idle Tracking: Update Timer", os.time())
             end)
         end
     end)
@@ -896,6 +895,16 @@ end
 
 local function hatchZoneEgg(egg)
     if not egg then return false, 0 end
+    local now = os.clock()
+    if now < (state.nextHatchAttemptAt or 0) then return false, 0 end
+
+    -- Kiểm tra số dư coin trước khi gửi Remote! Tránh spam 75 request/phút khi hết tiền gây văng server
+    local curBal = currency(K.CURRENCY) or 0
+    if curBal <= 0 then
+        state.nextHatchAttemptAt = now + 3.0 -- Nghỉ 3s chờ cày thêm quặng
+        return false, 0
+    end
+
     local maxAmount = getAccountMaxHatch(egg)
     local target = egg.uid or egg.id
     if not target then return false, 0 end
@@ -905,8 +914,20 @@ local function hatchZoneEgg(egg)
         state.totalEggsHatched = state.totalEggsHatched + maxAmount
         state.lastSuccessfulHatch = os.clock()
         return true, maxAmount
+    else
+        -- Nếu mở bulk thất bại: thử hatch 1 quả
+        if maxAmount > 1 then
+            local ok1, res1 = netInvoke("CustomEggs_Hatch", target, 1)
+            if ok1 and res1 == true then
+                state.totalEggsHatched = state.totalEggsHatched + 1
+                state.lastSuccessfulHatch = os.clock()
+                return true, 1
+            end
+        end
+        -- Thất bại do hết coin hoặc server cooldown -> giãn nhịp 3.5 giây, TUYỆT ĐỐI KHÔNG spam invoke
+        state.nextHatchAttemptAt = now + 3.5
+        return false, 0
     end
-    return false, 0
 end
 
 -- ================= FARM BREAKABLES & HÚT ORBS (CPU OPTIMIZED) =================
@@ -923,10 +944,18 @@ local function zoneBreakables(zoneNumber)
     local folder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
     if folder then
         local area = "Main_" .. tostring(zoneNumber)
+        local altArea = "__Zone_" .. tostring(zoneNumber)
+        local zoneCfg = K.ZONES[zoneNumber]
+        local zPos = zoneCfg and zoneCfg.Pos
         for _, m in ipairs(folder:GetChildren()) do
-            if m:IsA("Model") and m:GetAttribute("ParentID") == K.INSTANCE_ID and m:GetAttribute("AreaID") == area then
-                local buid = m:GetAttribute("BreakableUID")
-                if buid ~= nil then table.insert(list, buid) end
+            if m:IsA("Model") then
+                local pid = m:GetAttribute("ParentID")
+                local aid = m:GetAttribute("AreaID")
+                local matchArea = (aid == area or aid == altArea or aid == tostring(zoneNumber))
+                if (pid == K.INSTANCE_ID and matchArea) or (zPos and dist(m:GetPivot().Position, zPos) <= 60) then
+                    local buid = m:GetAttribute("BreakableUID")
+                    if buid ~= nil then table.insert(list, buid) end
+                end
             end
         end
     end
@@ -1609,13 +1638,32 @@ local function checkAndRunDaycare()
     local pets = s and s.Inventory and s.Inventory.Pet
     local candidates = {}
     if needEnroll and type(pets) == "table" then
+        -- Thu thập tập hợp UID các pet đang được trang bị để không bao giờ gửi nhầm
+        local equippedSet = {}
+        if isfn(G.PetCmds, "GetEquipped") then
+            local okEq, eqList = gcall(G.PetCmds.GetEquipped)
+            if okEq and type(eqList) == "table" then
+                for _, eqUid in pairs(eqList) do
+                    if type(eqUid) == "string" then equippedSet[eqUid] = true end
+                end
+            end
+        end
+        if type(s and s.EquippedPets) == "table" then
+            for _, eqUid in pairs(s.EquippedPets) do
+                if type(eqUid) == "string" then equippedSet[eqUid] = true end
+            end
+        end
+        for _, activePet in ipairs(petEuids()) do
+            if activePet ~= nil then equippedSet[tostring(activePet)] = true end
+        end
+
         for uid, p in pairs(pets) do
             if type(p) == "table" and type(p.id) == "string" then
-                local isHuge = (p.IsHuge and p:IsHuge()) or p.id:find("Huge ")
-                local isTitanic = p.id:find("Titanic ")
-                local isExclusive = p.id:find("Exclusive")
-                local isLocked = (p.lk == true or p._lk == true)
-                local isEquipped = (p._eq == true or p.eq == true)
+                local isHuge = (p.IsHuge and p:IsHuge()) or (p.id:find("Huge ") ~= nil)
+                local isTitanic = (p.id:find("Titanic ") ~= nil)
+                local isExclusive = (p.id:find("Exclusive") ~= nil)
+                local isLocked = (p.lk == true or p._lk == true or p.Locked == true)
+                local isEquipped = (p._eq == true or p.eq == true or equippedSet[uid] == true)
 
                 if not (isHuge or isTitanic or isExclusive or isLocked or isEquipped) then
                     table.insert(candidates, {
@@ -1733,17 +1781,17 @@ local function checkAndRunDaycare()
     end
 end
 
--- ================= AUTO CLAIM FREE GIFTS (12 MỐC) =================
+-- ================= AUTO CLAIM FREE GIFTS (12 MỐC - TIẾT KIỆM REQUEST) =================
 local function checkAndClaimFreeGifts()
     if not CFG.AutoClaimFreeGifts then return end
     local now = os.clock()
     if now < state.nextClaimGiftsAt then return end
-    state.nextClaimGiftsAt = now + 60
+    state.nextClaimGiftsAt = now + 180 -- Nhận quà mỗi 3 phút, chống spam remote
 
     pcall(function()
         for i = 1, 12 do
             netInvoke("Redeem Free Gift", i)
-            task.wait(0.12)
+            task.wait(0.2)
         end
     end)
 end
@@ -1896,14 +1944,24 @@ end)
 -- ================= VÒNG LẶP WATCHDOG (CHỐNG REJOIN OAN 7 ZONE ĐẦU) =================
 task.spawn(function()
     while (state and state.alive) do
-        task.wait(10)
+        task.wait(15)
         pcall(function()
             local wCfg = CFG.Watchdog
             if not (wCfg and wCfg.Enabled) then return end
             if not inEvent() or state.excursion ~= nil then return end
             if state.isRejoining then return end
 
-            local maxIdleSec = (wCfg.MaxIdleHatchMinutes or 7) * 60
+            -- Nếu nhân vật còn sống và đang farm breakables hoặc còn coin -> Tuyệt đối không kick oan!
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local currentZone = state.currentZoneNumber or 1
+                if #zoneBreakables(currentZone) > 0 or (currency(K.CURRENCY) or 0) > 0 then
+                    state.lastSuccessfulHatch = os.clock()
+                    return
+                end
+            end
+
+            local maxIdleSec = (wCfg.MaxIdleHatchMinutes or 30) * 60
             if (os.clock() - state.lastSuccessfulHatch) >= maxIdleSec then
                 forceRejoin(string.format("Kẹt cứng không hatch/farm được quá %d phút.", math.floor(maxIdleSec / 60)))
             end
@@ -1991,12 +2049,12 @@ task.spawn(function()
                     if okH then
                         state.lastSuccessfulHatch = os.clock()
                     else
-                        if #zoneBreakables(8) > 0 then
+                        if #zoneBreakables(8) > 0 or (currency(K.CURRENCY) or 0) > 0 then
                             state.lastSuccessfulHatch = os.clock()
                         end
                     end
                 else
-                    if #zoneBreakables(8) > 0 then
+                    if #zoneBreakables(8) > 0 or (currency(K.CURRENCY) or 0) > 0 then
                         state.lastSuccessfulHatch = os.clock()
                     end
                 end
