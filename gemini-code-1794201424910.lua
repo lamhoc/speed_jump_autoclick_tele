@@ -1715,4 +1715,3 @@ genv.Kizhub_HG = {
         if g then g:Destroy() end
     end
 }
-```[cite: 4]
