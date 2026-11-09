@@ -1,6 +1,6 @@
 -- =========================================================================
 -- PS99 KAITUN: HALLOWEEN GAMES (FINAL 100% PRODUCTION • BLACK SCREEN)
--- Chuẩn hóa dữ liệu thực tế từ Save.Get() & EventUpgradeCmds
+-- Cập nhật: Bỏ qua Mail Huge Bat Hoodie Bunny & Tích hợp Auto Daycare lên GUI
 -- Tác giả: kizhub • Auto Combine Huge • VyHub Logic • Tối ưu CPU 80 Acc
 -- =========================================================================
 
@@ -37,6 +37,8 @@ genv.KaitunConfig = genv.KaitunConfig or {
     AutoCombine = true,
     TargetCombineRecipe = "Huge Bat Hoodie Bunny",
     CombineCooldown = 60,
+
+    AutoDaycare = true,
 
     AfkPulseInterval = 180,
 
@@ -184,6 +186,7 @@ local G = {
     Directory         = req("Library.Directory"),
     Items             = req("Library.Items"),
     FFlags            = req("Library.Client.FFlags", true),
+    DaycareCmds       = req("Library.Client.DaycareCmds", true),
 }
 
 -- ================= BẢNG HẰNG SỐ & KHU VỰC =================
@@ -228,10 +231,12 @@ local state = {
     totalEggsHatched = 0,
     combineStatus = "Rảnh",
     mailStatus = "Rảnh",
+    daycareStatus = "Rảnh",
     lastSuccessfulHatch = os.clock(),
     nextUnlockTryAt = 0,
     nextTreatUpgradeAt = 0,
     nextCombineAt = 0,
+    nextDaycareCheckAt = 0,
     nextToyAt = 0,
     nextFruitAt = 0,
     nextPotionAt = 0,
@@ -443,16 +448,26 @@ local function installGodModeAntiAfk()
 
             pcall(function()
                 local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                if hum then
+                if hum and hum.Health > 0 then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
                     hum.Jump = true
-                    task.wait(0.1)
-                    hum.Jump = false
                 end
+            end)
+
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+            end)
+
+            pcall(function()
+                netFire("Idle Tracking: Stop Timer")
             end)
         end
     end)
 end
 pcall(installGodModeAntiAfk)
+
 
 -- ================= BỎ QUA ANIMATION MỞ TRỨNG & BUFF SPEED =================
 local function installNoHatchAnimation()
@@ -512,11 +527,11 @@ pcall(function()
     KizCard.Name = "KizCard"
     KizCard.AnchorPoint = Vector2.new(1, 0)
     KizCard.Position = UDim2.new(1, -20, 0, 20)
-    KizCard.Size = UDim2.new(0, 420, 0, 345)
+    KizCard.Size = UDim2.new(0, 420, 0, 365)
     KizCard.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
     KizCard.BackgroundTransparency = 0.05
     KizCard.BorderSizePixel = 0
-    KizCard.ClipsDescendants = true -- Chặn chữ lòi ra ngoài viền
+    KizCard.ClipsDescendants = true
     KizCard.Active = true
     KizCard.Draggable = true
     KizCard.ZIndex = 2
@@ -565,7 +580,7 @@ pcall(function()
     TitleInfo.ZIndex = 2
 
     local SubInfo = Instance.new("TextLabel", HeaderFrame)
-    SubInfo.Text = "Auto Farm • Auto Combine Huge • VyHub Upgrades"
+    SubInfo.Text = "Auto Farm • Auto Combine Huge • Daycare • Upgrades"
     SubInfo.Font = Enum.Font.Gotham
     SubInfo.TextSize = 11
     SubInfo.TextColor3 = Color3.fromRGB(160, 160, 175)
@@ -615,11 +630,12 @@ pcall(function()
     end
 
     uiRefs.UptimeLabel  = createRow("Thời Gian Chạy:", "00:00:00 (0.0 phút)", 0, Color3.fromRGB(0, 255, 140))
-    uiRefs.ZoneLabel    = createRow("Zone Hiện Tại:", "Đang tải...", 22)
-    uiRefs.CombineLabel = createRow("Ghép Huge Bunny:", "Rảnh", 44, Color3.fromRGB(255, 215, 0))
-    uiRefs.MailLabel    = createRow("Auto Mailbox:", "Rảnh", 66, Color3.fromRGB(0, 200, 255))
-    uiRefs.CoinsLabel   = createRow("Candy Coins:", "0", 88)
-    uiRefs.TreatsLabel  = createRow("Treats / Trứng Nở:", "0 / 0", 110)
+    uiRefs.ZoneLabel    = createRow("Zone Hiện Tại:", "Đang tải...", 20)
+    uiRefs.CombineLabel = createRow("Ghép Huge Bunny:", "Rảnh", 40, Color3.fromRGB(255, 215, 0))
+    uiRefs.MailLabel    = createRow("Auto Mailbox:", "Rảnh", 60, Color3.fromRGB(0, 200, 255))
+    uiRefs.DaycareLabel = createRow("Auto Daycare:", "Đang tải...", 80, Color3.fromRGB(180, 130, 255))
+    uiRefs.CoinsLabel   = createRow("Candy Coins:", "0", 100)
+    uiRefs.TreatsLabel  = createRow("Treats / Trứng Nở:", "0 / 0", 120)
 
     local UpgTitle = Instance.new("TextLabel", InfoContainer)
     UpgTitle.Text = "Tiến Trình Treat Upgrades (VyHub Logic):"
@@ -628,7 +644,7 @@ pcall(function()
     UpgTitle.TextColor3 = Color3.fromRGB(255, 140, 0)
     UpgTitle.TextXAlignment = Enum.TextXAlignment.Left
     UpgTitle.BackgroundTransparency = 1
-    UpgTitle.Position = UDim2.new(0, 0, 0, 134)
+    UpgTitle.Position = UDim2.new(0, 0, 0, 142)
     UpgTitle.Size = UDim2.new(1, 0, 0, 18)
     UpgTitle.ZIndex = 2
 
@@ -641,7 +657,7 @@ pcall(function()
     uiRefs.UpgradesLabel.TextYAlignment = Enum.TextYAlignment.Top
     uiRefs.UpgradesLabel.TextWrapped = true
     uiRefs.UpgradesLabel.BackgroundTransparency = 1
-    uiRefs.UpgradesLabel.Position = UDim2.new(0, 0, 0, 154)
+    uiRefs.UpgradesLabel.Position = UDim2.new(0, 0, 0, 162)
     uiRefs.UpgradesLabel.Size = UDim2.new(1, 0, 0, 85)
     uiRefs.UpgradesLabel.ZIndex = 2
 end)
@@ -1373,6 +1389,164 @@ local function checkAndRunCombine()
     state.nextCombineAt = os.clock() + (CFG.CombineCooldown or 60)
 end
 
+-- ================= AUTO DAYCARE MODULE (CLAIM & SMART ENROLL) =================
+local function getDaycareInfo()
+    local s = getSave()
+    local dc = s and (s.Daycare or s.DaycareQueue)
+    if type(dc) ~= "table" then
+        return { enrolled = 0, maxSlots = 10, readyToClaim = false, minRemaining = 0 }
+    end
+
+    local queue = dc.Queue or dc.Pets or dc.Slots or dc
+    local maxSlots = tonumber(dc.MaxSlots or dc.Max or dc.Capacity or s.DaycareSlots) or 10
+
+    local enrolled = 0
+    local readyToClaim = false
+    local minRemaining = math.huge
+    local now = os.time()
+
+    for k, v in pairs(queue) do
+        if type(v) == "table" then
+            enrolled = enrolled + 1
+            local readyAt = tonumber(v.ReadyTime or v.ReadyAt or v.ClaimTime or v.EndTime or v.Time)
+            local remain = tonumber(v.Remaining or v.TimeLeft)
+            
+            if readyAt then
+                local diff = readyAt - now
+                if diff <= 0 then
+                    readyToClaim = true
+                    minRemaining = 0
+                else
+                    if diff < minRemaining then minRemaining = diff end
+                end
+            elseif remain then
+                if remain <= 0 then
+                    readyToClaim = true
+                    minRemaining = 0
+                else
+                    if remain < minRemaining then minRemaining = remain end
+                end
+            end
+        end
+    end
+
+    if minRemaining == math.huge then minRemaining = 0 end
+    return {
+        enrolled = enrolled,
+        maxSlots = math.max(10, maxSlots),
+        readyToClaim = readyToClaim,
+        minRemaining = minRemaining
+    }
+end
+
+local function checkAndRunDaycare()
+    if not CFG.AutoDaycare or state.excursion ~= nil then return end
+
+    local now = os.clock()
+    if now < state.nextDaycareCheckAt then return end
+    state.nextDaycareCheckAt = now + 30 -- Kiểm tra mỗi 30s
+
+    local dcInfo = getDaycareInfo()
+
+    -- 1. Nếu có pet đã hoàn thành -> Nhận quà Daycare
+    if dcInfo.readyToClaim or (dcInfo.enrolled > 0 and dcInfo.minRemaining <= 0) then
+        state.daycareStatus = "Đang nhận quà Daycare..."
+        local okC = false
+        if isfn(G.DaycareCmds, "Claim") then
+            local ok, res = gcall(G.DaycareCmds.Claim)
+            if ok and res then okC = true end
+        end
+        if not okC then
+            local ok, res = netInvoke("Daycare: Claim")
+            if ok and res then okC = true end
+        end
+        if okC then
+            state.daycareStatus = "Đã nhận quà Daycare"
+            task.wait(1.5)
+            dcInfo = getDaycareInfo()
+        end
+    end
+
+    -- 2. Nếu còn slot trống -> Gửi pet thường vào Daycare (Tuyệt đối không gửi Huge/Exclusive)
+    local slotsOpen = dcInfo.maxSlots - dcInfo.enrolled
+    if slotsOpen > 0 then
+        local s = getSave()
+        local pets = s and s.Inventory and s.Inventory.Pet
+        if type(pets) == "table" then
+            local candidates = {}
+            for uid, p in pairs(pets) do
+                if type(p) == "table" and type(p.id) == "string" then
+                    local isHuge = (p.IsHuge and p:IsHuge()) or p.id:find("Huge ")
+                    local isTitanic = p.id:find("Titanic ")
+                    local isExclusive = p.id:find("Exclusive")
+                    local isLocked = (p.lk == true or p._lk == true)
+                    local isEquipped = (p._eq == true or p.eq == true)
+
+                    if not (isHuge or isTitanic or isExclusive or isLocked or isEquipped) then
+                        table.insert(candidates, { uid = uid, id = p.id })
+                    end
+                end
+            end
+
+            if #candidates > 0 then
+                local toEnrollDict = {}
+                local toEnrollList = {}
+                local count = math.min(slotsOpen, #candidates)
+                for i = 1, count do
+                    local cand = candidates[i]
+                    toEnrollDict[cand.uid] = 1
+                    table.insert(toEnrollList, cand.uid)
+                end
+
+                state.daycareStatus = string.format("Đang gửi %d pet...", count)
+                local okE = false
+                if isfn(G.DaycareCmds, "Enroll") then
+                    local ok, res = gcall(G.DaycareCmds.Enroll, toEnrollDict)
+                    if ok and res then okE = true end
+                end
+                if not okE then
+                    local ok, res = netInvoke("Daycare: Enroll", toEnrollDict)
+                    if ok and res then okE = true end
+                end
+                if not okE then
+                    local ok, res = netInvoke("Daycare: Enroll", toEnrollList)
+                    if ok and res then okE = true end
+                end
+
+                if okE then
+                    state.daycareStatus = string.format("Đã gửi %d pet vào Daycare", count)
+                    task.wait(1)
+                    dcInfo = getDaycareInfo()
+                else
+                    state.daycareStatus = "Gửi pet thất bại"
+                end
+            else
+                if dcInfo.enrolled == 0 then
+                    state.daycareStatus = "Hết pet thường để gửi"
+                end
+            end
+        end
+    end
+
+    -- 3. Cập nhật trạng thái hiển thị
+    if dcInfo.enrolled > 0 then
+        if dcInfo.minRemaining > 0 then
+            local remMins = math.ceil(dcInfo.minRemaining / 60)
+            local hrs = math.floor(remMins / 60)
+            local mins = remMins % 60
+            if hrs > 0 then
+                state.daycareStatus = string.format("Đang gửi %d/%d (còn %dh %dp)", dcInfo.enrolled, dcInfo.maxSlots, hrs, mins)
+            else
+                state.daycareStatus = string.format("Đang gửi %d/%d (còn %dp)", dcInfo.enrolled, dcInfo.maxSlots, mins)
+            end
+        else
+            state.daycareStatus = string.format("Đang gửi %d/%d (Đã xong, chờ nhận)", dcInfo.enrolled, dcInfo.maxSlots)
+        end
+    elseif slotsOpen > 0 and (state.daycareStatus == "Rảnh" or state.daycareStatus == "Đang tải...") then
+        state.daycareStatus = string.format("Trống %d/%d slot", slotsOpen, dcInfo.maxSlots)
+    end
+end
+
 -- ================= AUTO CLAIM FREE GIFTS (12 MỐC) =================
 local function checkAndClaimFreeGifts()
     if not CFG.AutoClaimFreeGifts then return end
@@ -1493,6 +1667,7 @@ local function updateKizhubGui()
     pcall(function() uiRefs.ZoneLabel.Text = string.format("Zone %d/8 (%s)", state.currentZoneNumber or 1, zData and zData.Name or "") end)
     pcall(function() uiRefs.CombineLabel.Text = state.combineStatus end)
     pcall(function() uiRefs.MailLabel.Text = state.mailStatus end)
+    pcall(function() uiRefs.DaycareLabel.Text = state.daycareStatus end)
     pcall(function() uiRefs.CoinsLabel.Text = shorten(currency(K.CURRENCY)) end)
     pcall(function() uiRefs.TreatsLabel.Text = string.format("%s Treats | %s quả", shorten(currency(K.TREATS)), shorten(state.totalEggsHatched)) end)
 
@@ -1521,7 +1696,7 @@ local function updateKizhubGui()
     pcall(function()
         local titleFn = setwindowtitle or set_window_title
         if titleFn then
-            titleFn(string.format("[%s] %s | Z%d | %s Xu | Mail: %s", LocalPlayer.Name, upStr, state.currentZoneNumber or 1, shorten(currency(K.CURRENCY) or 0), state.mailStatus))
+            titleFn(string.format("[%s] %s | Z%d | %s Xu | Daycare: %s", LocalPlayer.Name, upStr, state.currentZoneNumber or 1, shorten(currency(K.CURRENCY) or 0), state.daycareStatus))
         end
     end)
 end
@@ -1653,7 +1828,7 @@ task.spawn(function()
     end
 end)
 
--- Vòng lặp phụ: Upgrades, Ghép Huge, Quà & Buffs (6s)
+-- Vòng lặp phụ: Upgrades, Ghép Huge, Daycare, Quà & Buffs (6s)
 task.spawn(function()
     while (state and state.alive) do
         pcall(function()
@@ -1661,6 +1836,7 @@ task.spawn(function()
                 checkNewHugeHatched()
                 checkAndRunTreatUpgrades()
                 checkAndRunCombine()
+                checkAndRunDaycare()
                 checkAndClaimFreeGifts()
                 runDelayedBuffs()
             end
@@ -1697,8 +1873,8 @@ task.spawn(function()
                 local zoneTitle = string.format("Zone %d/8 (%s)", currentZ, zoneInfo and zoneInfo.Name or "Unknown")
 
                 local statusDesc = string.format(
-                    "⏱️ **Thời gian chạy:** `%s`\n📍 **Khu vực:** `%s`\n🍬 **Candy Coins:** `%s`\n🎃 **Treats:** `%s`\n🥚 **Trứng đã nở:** `%s` quả\n🛠️ **Ghép Huge:** `%s`\n📬 **Hòm thư:** `%s`",
-                    upStr, zoneTitle, currentCoins, currentTreats, totalHatched, state.combineStatus or "Rảnh", state.mailStatus or "Rảnh"
+                    "⏱️ **Thời gian chạy:** `%s`\n📍 **Khu vực:** `%s`\n🍬 **Candy Coins:** `%s`\n🎃 **Treats:** `%s`\n🥚 **Trứng đã nở:** `%s` quả\n🛠️ **Ghép Huge:** `%s`\n📬 **Hòm thư:** `%s`\n🏡 **Daycare:** `%s`",
+                    upStr, zoneTitle, currentCoins, currentTreats, totalHatched, state.combineStatus or "Rảnh", state.mailStatus or "Rảnh", state.daycareStatus or "Rảnh"
                 )
 
                 sendWebhook("🟢 [STATUS 30' REPORT] " .. LocalPlayer.Name, statusDesc, 0x00E676, wb.StatusUrl)
@@ -1715,7 +1891,7 @@ task.spawn(function()
     end
 end)
 
--- ================= AUTO-MAIL HUGE MODULE (NÂNG CẤP MAILBOX FULL & COST GUARD) =================
+-- ================= AUTO-MAIL HUGE MODULE (BỎ QUA BAT HOODIE BUNNY) =================
 task.spawn(function()
     local MailConfig = {
         Recipient       = "Kizmoii_VNG",
@@ -1770,6 +1946,11 @@ task.spawn(function()
             if type(p) == "table" and type(p.id) == "string" then
                 local isHuge = (p.IsHuge and p:IsHuge()) or (p.id:find("Huge ") and not p.id:find("Huge Hunter"))
                 if isHuge then
+                    -- Bỏ qua Huge Bat Hoodie Bunny (chưa hỗ trợ gửi thư tại event này)
+                    if p.id:find("Bat Hoodie Bunny") then
+                        continue
+                    end
+
                     if FailedUIDBlacklist[uid] then continue end
                     if p.sb == true or p._sb == true or p.Soulbound == true or p.Untradable == true then
                         FailedUIDBlacklist[uid] = true
@@ -1816,7 +1997,7 @@ task.spawn(function()
 
             local huge = findSendableHuge()
             if not huge then
-                state.mailStatus = "Hết Huge"
+                state.mailStatus = "Hết Huge (Bỏ qua Bunny)"
                 task.wait(MailConfig.IdleCheckSec)
                 return
             end
