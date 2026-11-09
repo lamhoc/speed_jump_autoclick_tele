@@ -1,6 +1,7 @@
 -- =========================================================================
--- PS99 KAITUN: HALLOWEEN GAMES (GUI FIXED • SMART WATCHDOG • AUTO-MAIL FINAL)
--- Cập nhật: Black Screen Mode, Auto Flags, Fix Tràn Chữ, Fix Treat Upgrades
+-- PS99 KAITUN: HALLOWEEN GAMES (FINAL 100% PRODUCTION • BLACK SCREEN)
+-- Chuẩn hóa dữ liệu thực tế từ Save.Get() & EventUpgradeCmds
+-- Tác giả: kizhub • Auto Combine Huge • VyHub Logic • Tối ưu CPU 80 Acc
 -- =========================================================================
 
 local genv = (type(getgenv) == "function" and getgenv()) or _G
@@ -50,8 +51,6 @@ genv.KaitunConfig = genv.KaitunConfig or {
         Toys = true,
         Fruits = true,
         Potions = true,
-        Flags = true,
-        PreferredFlags = { "Coins Flag", "Fortune Flag", "Hasty Flag", "Magnet Flag" },
     },
 }
 local CFG = genv.KaitunConfig
@@ -64,7 +63,6 @@ local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
 local VirtualUser = game:GetService("VirtualUser")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
@@ -186,8 +184,6 @@ local G = {
     Directory         = req("Library.Directory"),
     Items             = req("Library.Items"),
     FFlags            = req("Library.Client.FFlags", true),
-    ZoneFlagCmds      = req("Library.Client.ZoneFlagCmds", true),
-    FlexibleFlagCmds  = req("Library.Client.FlexibleFlagCmds", true),
 }
 
 -- ================= BẢNG HẰNG SỐ & KHU VỰC =================
@@ -210,17 +206,17 @@ local K = {
         [8] = { Number = 8, Name = "Thorn Spire",      Egg = "Thorn Egg",       Pos = Vector3.new(-6680.50, 16.92, -3910.71) },
     },
     UPGRADES = {
-        { Key = "PetSavings",     Id = "HalloweenGamesPetSavings",     Name = "Pet Savings (Forge Saver)" },
-        { Key = "BetterVariants", Id = "HalloweenGamesBetterVariants", Name = "Better Variants" },
-        { Key = "HugeLuck",       Id = "HalloweenGamesHugeLuck",       Name = "Huge Luck" },
-        { Key = "EggLuck",        Id = "HalloweenGamesEggLuck",        Name = "More Egg Luck" },
-        { Key = "CoinFinder",     Id = "HalloweenGamesCoinFinder",     Name = "Coin Finder" },
-        { Key = "Golden",         Id = "HalloweenGamesGolden",         Name = "More Gold" },
-        { Key = "Rainbow",        Id = "HalloweenGamesRainbow",        Name = "More Rainbow" },
-        { Key = "Shiny",          Id = "HalloweenGamesShiny",          Name = "Ooo Shiny" },
+        { Key = "CoinFinder",     Id = "HalloweenGamesCoinFinder",     Aliases = { "HalloweenGamesCoinFinder" }, Name = "Coin Finder" },
+        { Key = "EggLuck",        Id = "HalloweenGamesEggLuck",        Aliases = { "HalloweenGamesEggLuck" }, Name = "More Egg Luck" },
+        { Key = "HugeLuck",       Id = "HalloweenGamesHugeLuck",       Aliases = { "HalloweenGamesHugeLuck" }, Name = "Huge Luck" },
+        { Key = "Golden",         Id = "HalloweenGamesGolden",         Aliases = { "HalloweenGamesGolden" }, Name = "More Gold" },
+        { Key = "Rainbow",        Id = "HalloweenGamesRainbow",        Aliases = { "HalloweenGamesRainbow" }, Name = "More Rainbow" },
+        { Key = "Shiny",          Id = "HalloweenGamesShiny",          Aliases = { "HalloweenGamesShiny" }, Name = "Ooo Shiny" },
+        { Key = "ForgeSaver",     Id = "HalloweenGamesForgeSaver",     Aliases = { "HalloweenGamesForgeSaver", "HalloweenGamesPetSavings" }, Name = "Forge Saver" },
+        { Key = "TreatFinder",    Id = "HalloweenGamesTreatFinder",    Aliases = { "HalloweenGamesTreatFinder", "HalloweenGamesTrickFinder", "HalloweenGamesBetterVariants" }, Name = "Treat Finder" },
     },
     OBJECTIVE_ORDER = {
-        ["Combine First"] = { "PetSavings", "BetterVariants", "HugeLuck", "EggLuck", "CoinFinder", "Golden", "Rainbow", "Shiny" },
+        ["Combine First"] = { "ForgeSaver", "TreatFinder", "HugeLuck", "EggLuck", "CoinFinder", "Golden", "Rainbow", "Shiny" },
     }
 }
 
@@ -239,7 +235,6 @@ local state = {
     nextToyAt = 0,
     nextFruitAt = 0,
     nextPotionAt = 0,
-    nextFlagAt = 0,
     nextClaimGiftsAt = 0,
     currentZoneNumber = 1,
 }
@@ -275,7 +270,7 @@ local function currency(id)
         if type(v) == "number" then return v end
     end
     local s = getSave()
-    if s then
+    if type(s) == "table" then
         if type(s.Currency) == "table" and type(s.Currency[id]) == "number" then
             return s.Currency[id]
         end
@@ -448,51 +443,27 @@ local function installGodModeAntiAfk()
 
             pcall(function()
                 local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                if hum then
                     hum.Jump = true
+                    task.wait(0.1)
+                    hum.Jump = false
                 end
-            end)
-
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-            end)
-
-            pcall(function()
-                netFire("Idle Tracking: Stop Timer")
             end)
         end
     end)
 end
 pcall(installGodModeAntiAfk)
 
--- ================= SKIP EGG ANIMATION =================
+-- ================= BỎ QUA ANIMATION MỞ TRỨNG & BUFF SPEED =================
 local function installNoHatchAnimation()
     task.spawn(function()
-        local attempts = 0
-        while (state and state.alive) and attempts < 30 do
-            attempts = attempts + 1
+        while (state and state.alive) do
             local ok, hooked = pcall(function()
-                if type(getsenv) ~= "function" then return false end
-                local ps = LocalPlayer:WaitForChild("PlayerScripts", 5)
-                local scripts = ps and ps:FindFirstChild("Scripts")
-                local gameFolder = scripts and scripts:FindFirstChild("Game")
-                local eggScript = gameFolder and gameFolder:FindFirstChild("Egg Opening Frontend")
-                if not eggScript then return false end
-
-                local env = getsenv(eggScript)
+                local eggCmds = RS.Library.Client:FindFirstChild("EggCmds")
+                if not eggCmds or type(getsenv) ~= "function" then return false end
+                local env = getsenv(eggCmds)
                 if type(env) == "table" and type(env.PlayEggAnimation) == "function" then
-                    if not env._kizhubHooked then
-                        local orig = env.PlayEggAnimation
-                        env.PlayEggAnimation = function(...)
-                            if (state and state.alive) then return end
-                            return orig(...)
-                        end
-                        env._kizhubHooked = true
-                        table.insert(restoreFns, function() env.PlayEggAnimation = orig end)
-                    end
+                    env.PlayEggAnimation = function() return end
                     return true
                 end
                 return false
@@ -635,7 +606,7 @@ pcall(function()
         val.TextSize = 12
         val.TextColor3 = highlightColor or Color3.fromRGB(255, 255, 255)
         val.TextXAlignment = Enum.TextXAlignment.Left
-        val.TextTruncate = Enum.TextTruncate.AtEnd -- Cắt ngắn gọn nếu quá dài, chống lòi ra ngoài
+        val.TextTruncate = Enum.TextTruncate.AtEnd
         val.BackgroundTransparency = 1
         val.Position = UDim2.new(0, 135, 0, yPos)
         val.Size = UDim2.new(1, -135, 0, 18)
@@ -662,7 +633,7 @@ pcall(function()
     UpgTitle.ZIndex = 2
 
     uiRefs.UpgradesLabel = Instance.new("TextLabel", InfoContainer)
-    uiRefs.UpgradesLabel.Text = "Đang đọc dữ liệu nâng cấp..."
+    uiRefs.UpgradesLabel.Text = "Đang nạp dữ liệu nâng cấp..."
     uiRefs.UpgradesLabel.Font = Enum.Font.Code
     uiRefs.UpgradesLabel.TextSize = 10
     uiRefs.UpgradesLabel.TextColor3 = Color3.fromRGB(180, 235, 200)
@@ -984,43 +955,54 @@ local function collectOrbsTick()
     end
 end
 
--- ================= TREAT UPGRADES (VYHUB LOGIC SỬA LỖI MODEL & READ TIER) =================
+-- ================= TREAT UPGRADES (CHUẨN HÓA CẤU TRÚC SAVE.GET) =================
 local function upgradeDir(id)
     local ok, d = pcall(function() return type(G.EventUpgrades) == "table" and G.EventUpgrades[id] or nil end)
     return ok and type(d) == "table" and d or nil
 end
 
-local function upgradeTier(id)
-    if isfn(G.EventUpgradeCmds, "GetTier") then
-        local ok, t = pcall(G.EventUpgradeCmds.GetTier, id)
-        if ok and type(t) == "number" then return t end
+local function upgradeTier(idOrUpgrade)
+    local testIds = {}
+    if type(idOrUpgrade) == "table" then
+        if idOrUpgrade.Id then table.insert(testIds, idOrUpgrade.Id) end
+        if type(idOrUpgrade.Aliases) == "table" then
+            for _, a in ipairs(idOrUpgrade.Aliases) do table.insert(testIds, a) end
+        end
+    elseif type(idOrUpgrade) == "string" then
+        table.insert(testIds, idOrUpgrade)
+        if idOrUpgrade == "HalloweenGamesPetSavings" then
+            table.insert(testIds, "HalloweenGamesForgeSaver")
+        elseif idOrUpgrade == "HalloweenGamesForgeSaver" then
+            table.insert(testIds, "HalloweenGamesPetSavings")
+        end
     end
+
     local s = getSave()
-    if s then
-        if type(s.EventUpgrades) == "table" then
+    for _, id in ipairs(testIds) do
+        -- 1. Gọi EventUpgradeCmds.GetTier với Identity Game (2)
+        if isfn(G.EventUpgradeCmds, "GetTier") then
+            local t = gval(G.EventUpgradeCmds.GetTier, id)
+            if type(t) == "number" and t > 0 then return t end
+        end
+        -- 2. Đọc từ s.EventUpgrades trong Save.Get()
+        if type(s) == "table" and type(s.EventUpgrades) == "table" then
             local val = s.EventUpgrades[id]
-            if type(val) == "number" then return val end
+            if type(val) == "number" and val > 0 then return val end
             if type(val) == "table" then
                 local num = val.Tier or val.tier or val._tier or val._am or val[1]
-                if type(num) == "number" then return num end
+                if type(num) == "number" and num > 0 then return num end
             end
         end
-        local iv = s.InstanceVars and s.InstanceVars[K.INSTANCE_ID]
-        if iv and type(iv.EventUpgrades) == "table" then
-            local val = iv.EventUpgrades[id]
-            if type(val) == "number" then return val end
-            if type(val) == "table" then
-                local num = val.Tier or val.tier or val._tier or val._am or val[1]
-                if type(num) == "number" then return num end
-            end
+    end
+
+    local firstId = testIds[1]
+    if firstId then
+        if isfn(G.EventUpgradeCmds, "GetTier") then
+            local t = gval(G.EventUpgradeCmds.GetTier, firstId)
+            if type(t) == "number" then return t end
         end
-        if iv and type(iv.Upgrades) == "table" then
-            local val = iv.Upgrades[id]
-            if type(val) == "number" then return val end
-            if type(val) == "table" then
-                local num = val.Tier or val.tier or val._tier or val._am or val[1]
-                if type(num) == "number" then return num end
-            end
+        if type(s) == "table" and type(s.EventUpgrades) == "table" and type(s.EventUpgrades[firstId]) == "number" then
+            return s.EventUpgrades[firstId]
         end
     end
     return 0
@@ -1028,9 +1010,9 @@ end
 
 local function upgradeInfo(u)
     local d = upgradeDir(u.Id)
-    local tier = tonumber(upgradeTier(u.Id)) or 0
+    local tier = tonumber(upgradeTier(u)) or 0
     local maxTier = d and type(d.TierPowers) == "table" and #d.TierPowers or 5
-    local cost
+    local cost = nil
     if d and tier < maxTier then
         if isfn(G.HGUpgrades, "Cost") then
             local okC, item = gcall(G.HGUpgrades.Cost, d, tier + 1)
@@ -1040,8 +1022,13 @@ local function upgradeInfo(u)
             end
         end
         if not cost and type(d.TierCosts) == "table" and d.TierCosts[tier + 1] then
-            local okC, amt = gcall(function() return d.TierCosts[tier + 1]:GetAmount() end)
-            if okC and type(amt) == "number" then cost = amt end
+            local targetCost = d.TierCosts[tier + 1]
+            if type(targetCost) == "number" then
+                cost = targetCost
+            elseif type(targetCost) == "table" and type(targetCost.GetAmount) == "function" then
+                local okA, amt = pcall(targetCost.GetAmount, targetCost)
+                if okA and type(amt) == "number" then cost = amt end
+            end
         end
     end
     local onSale = true
@@ -1244,19 +1231,46 @@ local function combineRecipes()
 end
 
 local function combineMachineStand()
-    local id = currentInstanceId()
-    local things = workspace:FindFirstChild("__THINGS")
-    local cont = things and things:FindFirstChild("__INSTANCE_CONTAINER")
-    local act = cont and cont:FindFirstChild("Active")
-    local m = act and id and act:FindFirstChild(id) or nil
-
+    local m = instanceModel()
     local inter = m and m:FindFirstChild("INTERACT")
     local machines = inter and inter:FindFirstChild("Machines")
     local mach = machines and machines:FindFirstChild(K.COMBINE_MACHINE)
+    if not mach then
+        local things = workspace:FindFirstChild("__THINGS")
+        local cont = things and things:FindFirstChild("__INSTANCE_CONTAINER")
+        local act = cont and cont:FindFirstChild("Active")
+        local inst = act and act:FindFirstChild(K.INSTANCE_ID)
+        local iinter = inst and inst:FindFirstChild("INTERACT")
+        local imachines = iinter and iinter:FindFirstChild("Machines")
+        mach = imachines and imachines:FindFirstChild(K.COMBINE_MACHINE)
+    end
     if not mach then return nil end
     local pad = mach:FindFirstChild("Pad", true)
     if pad and pad:IsA("BasePart") then return pad.Position + Vector3.new(0, 3, 0) end
     return mach:GetPivot().Position + Vector3.new(0, 3, 6)
+end
+
+local function activeQueues()
+    -- 1. Ưu tiên gọi Remote mạng HalloweenCraftingMachine_GetQueue
+    local okQ, queue = netInvoke("HalloweenCraftingMachine_GetQueue")
+    if okQ and type(queue) == "table" then
+        return queue
+    end
+
+    -- 2. Đọc từ s.HalloweenCraftingQueue trong Save.Get()
+    local s = getSave()
+    if type(s) == "table" then
+        if type(s.HalloweenCraftingQueue) == "table" then
+            return s.HalloweenCraftingQueue
+        end
+        local iv = s.InstanceVars and s.InstanceVars[K.INSTANCE_ID]
+        local cm = iv and iv.HalloweenCraftingMachines
+        local m = cm and cm[K.COMBINE_ID]
+        if type(m) == "table" and type(m.Queue) == "table" then
+            return m.Queue
+        end
+    end
+    return {}
 end
 
 local function checkAndRunCombine()
@@ -1264,38 +1278,29 @@ local function checkAndRunCombine()
     local now = os.clock()
     if now < state.nextCombineAt then return end
 
-    if isfn(G.HGForge, "CombineMode") and gval(G.HGForge.CombineMode) == false then
-        state.combineStatus = "Máy ghép đang đóng"
-        state.nextCombineAt = now + 45
-        return
-    end
-
     local recipes, dir = combineRecipes()
-    if not dir then
-        state.combineStatus = "Không thấy máy ghép"
-        state.nextCombineAt = now + 45
-        return
-    end
+    if not dir or #recipes == 0 then return end
 
-    local okQ, queue = netInvoke("HalloweenCraftingMachine_GetQueue")
-    if not okQ or type(queue) ~= "table" then
-        state.combineStatus = "Lỗi đọc Queue ghép"
-        state.nextCombineAt = now + 45
-        return
-    end
-
-    local queued, readyClaims = {}, {}
-    for _, e in ipairs(queue) do
-        if type(e) == "table" and (e.MachineId == nil or e.MachineId == dir._id) and e.RecipeIndex then
-            queued[e.RecipeIndex] = e
-            if (tonumber(e.Remaining) or 0) <= 0 and e.UID then
-                table.insert(readyClaims, e)
+    local q = activeQueues()
+    local readyClaims, queued = {}, {}
+    for k, item in pairs(q) do
+        if type(item) == "table" then
+            local uid = item.UID or (type(k) == "string" and k) or nil
+            local recIdx = item.RecipeIndex or (item.Recipe and item.Recipe.Index)
+            local rem = tonumber(item.Remaining) or tonumber(item.TimeLeft) or 0
+            if recIdx then
+                if rem <= 0 and uid then
+                    table.insert(readyClaims, { UID = uid, RecipeIndex = recIdx })
+                else
+                    queued[recIdx] = item
+                end
             end
         end
     end
 
     local targetRecipeName = CFG.TargetCombineRecipe or "Huge Bat Hoodie Bunny"
-    local starts, waiting = {}, {}
+    local starts = {}
+    local waiting = {}
 
     for i = #recipes, 1, -1 do
         local r = recipes[i]
@@ -1314,7 +1319,6 @@ local function checkAndRunCombine()
 
     if #readyClaims == 0 and #starts == 0 then
         if #waiting > 0 then
-            -- Giữ chuỗi ngắn gọn, tránh tràn GUI
             state.combineStatus = "Thiếu: " .. waiting[1]
         elseif state.combineStatus == "Rảnh" or state.combineStatus == "Đang Claim Huge" then
             state.combineStatus = "Chờ nguyên liệu"
@@ -1380,66 +1384,6 @@ local function checkAndClaimFreeGifts()
         for i = 1, 12 do
             netInvoke("Redeem Free Gift", i)
             task.wait(0.12)
-        end
-    end)
-end
-
--- ================= AUTO CẮM CỜ (ZONE FLAGS & FLEXIBLE FLAGS) =================
-local function runAutoFlags()
-    local bCfg = CFG.AutoBuffs
-    if not (bCfg and bCfg.Flags) or not inEvent() then return end
-    local now = os.clock()
-    if now < state.nextFlagAt then return end
-    state.nextFlagAt = now + 120 -- Kiểm tra mỗi 2 phút
-
-    pcall(function()
-        local currentZ = state.currentZoneNumber or 1
-        local areaName = "Main_" .. tostring(currentZ)
-        local preferred = bCfg.PreferredFlags or { "Coins Flag", "Fortune Flag", "Hasty Flag", "Magnet Flag" }
-
-        local s = getSave()
-        if not s or not s.Inventory then return end
-
-        local targetFlag = nil
-        local flagUid = nil
-
-        -- Tìm cờ ưu tiên trong Inventory.ZoneFlag hoặc Inventory.Misc
-        local function scanBranch(branch)
-            if type(branch) ~= "table" then return nil, nil end
-            for _, pref in ipairs(preferred) do
-                for uid, item in pairs(branch) do
-                    if type(item) == "table" and type(item.id) == "string" and item.id == pref then
-                        local amt = tonumber(item._am) or 0
-                        if amt > 0 then return item.id, item._uid or uid end
-                    end
-                end
-            end
-            return nil, nil
-        end
-
-        targetFlag, flagUid = scanBranch(s.Inventory.ZoneFlag)
-        if not targetFlag then targetFlag, flagUid = scanBranch(s.Inventory.Misc) end
-
-        if not targetFlag or not flagUid then return end
-
-        -- 1. Thử gọi qua Module Client nếu có
-        local placed = false
-        if isfn(G.ZoneFlagCmds, "Place") then
-            local okP, resP = gcall(G.ZoneFlagCmds.Place, areaName, targetFlag)
-            if okP and resP == true then placed = true end
-        end
-
-        -- 2. Thử gọi Network Remotes (Flags: Consume / FlexibleFlags_Consume)
-        if not placed then
-            local okF = netInvoke("Flags: Consume", areaName, targetFlag)
-            if okF then placed = true end
-        end
-        if not placed then
-            local okFl = netInvoke("FlexibleFlags_Consume", targetFlag)
-            if okFl then placed = true end
-        end
-        if not placed and flagUid then
-            netInvoke("Consumables_Consume", flagUid, 1)
         end
     end)
 end
@@ -1545,21 +1489,22 @@ local function updateKizhubGui()
     local upStr = formatUptime()
     local zData = K.ZONES[state.currentZoneNumber]
     
-    -- Cập nhật thông số cơ bản (Bọc pcall riêng từng dòng để tránh gãy luồng)
+    -- Cập nhật thông số cơ bản (Bọc riêng từng dòng để tránh gãy luồng)
     pcall(function() uiRefs.ZoneLabel.Text = string.format("Zone %d/8 (%s)", state.currentZoneNumber or 1, zData and zData.Name or "") end)
     pcall(function() uiRefs.CombineLabel.Text = state.combineStatus end)
     pcall(function() uiRefs.MailLabel.Text = state.mailStatus end)
     pcall(function() uiRefs.CoinsLabel.Text = shorten(currency(K.CURRENCY)) end)
     pcall(function() uiRefs.TreatsLabel.Text = string.format("%s Treats | %s quả", shorten(currency(K.TREATS)), shorten(state.totalEggsHatched)) end)
 
-    -- Cập nhật danh sách 8 Upgrades (Bọc an toàn)
+    -- Cập nhật danh sách 8 Upgrades (Khớp hoàn toàn với Save.Get().EventUpgrades)
     pcall(function()
         local upgLines = {}
         for _, u in ipairs(K.UPGRADES) do
-            local tier = tonumber(upgradeTier(u.Id)) or 0
-            local tag = (u.Key == "PetSavings" or u.Key == "BetterVariants") and "[P2]" or "[P1]"
+            local tier = 0
+            pcall(function() tier = tonumber(upgradeTier(u)) or 0 end)
+            local tag = (u.Key == "ForgeSaver" or u.Key == "TreatFinder") and "[P2]" or "[P1]"
             local tierStr = (tier >= 5) and "MAX" or string.format("%d/5", tier)
-            table.insert(upgLines, string.format("%s %s: %s", tag, u.Name:gsub(" %(.*%)", ""), tierStr))
+            table.insert(upgLines, string.format("%s %s: %s", tag, u.Name, tierStr))
         end
 
         local formatted = ""
@@ -1568,7 +1513,9 @@ local function updateKizhubGui()
             local col2 = upgLines[i+1] or ""
             formatted = formatted .. string.format("%-18s | %s\n", col1, col2)
         end
-        uiRefs.UpgradesLabel.Text = formatted
+        if uiRefs.UpgradesLabel then
+            uiRefs.UpgradesLabel.Text = formatted
+        end
     end)
 
     pcall(function()
@@ -1578,6 +1525,12 @@ local function updateKizhubGui()
         end
     end)
 end
+
+-- Cập nhật GUI ngay lập tức khi load xong
+task.spawn(function()
+    task.wait(0.5)
+    pcall(updateKizhubGui)
+end)
 
 -- ================= VÒNG LẶP WATCHDOG (CHỐNG REJOIN OAN 7 ZONE ĐẦU) =================
 task.spawn(function()
@@ -1700,7 +1653,7 @@ task.spawn(function()
     end
 end)
 
--- Vòng lặp phụ: Upgrades, Ghép Huge, Quà, Cắm Cờ & Buffs (6s)
+-- Vòng lặp phụ: Upgrades, Ghép Huge, Quà & Buffs (6s)
 task.spawn(function()
     while (state and state.alive) do
         pcall(function()
@@ -1710,7 +1663,6 @@ task.spawn(function()
                 checkAndRunCombine()
                 checkAndClaimFreeGifts()
                 runDelayedBuffs()
-                runAutoFlags()
             end
         end)
         task.wait(6)
