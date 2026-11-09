@@ -39,6 +39,8 @@ genv.KaitunConfig = genv.KaitunConfig or {
     CombineCooldown = 60,
 
     AutoDaycare = true,
+    AutoMailHuge = true,
+    MailRetryInterval = 1800, -- Nếu gửi không được: đúng 30 phút sau mới thử lại, chống spam 100%
 
     AfkPulseInterval = 180,
 
@@ -1708,19 +1710,160 @@ local function checkAndRunDaycare()
     -- 1. Claim quà Daycare nếu đã ủ xong
     if needClaim then
         state.daycareStatus = "Đang nhận quà Daycare..."
+
+        -- Snapshot túi đồ TRƯỚC KHI CLAIM để đối chiếu chính xác
+        local sBefore = getSave()
+        local diaBefore = 0
+        if type(sBefore and sBefore.Inventory and sBefore.Inventory.Currency) == "table" then
+            for _, v in pairs(sBefore.Inventory.Currency) do
+                if type(v) == "table" and v.id == "Diamonds" then diaBefore = tonumber(v._am) or 0 end
+            end
+        end
+
+        local petsBefore = {}
+        if type(sBefore and sBefore.Inventory and sBefore.Inventory.Pet) == "table" then
+            for uid, p in pairs(sBefore.Inventory.Pet) do
+                if type(p) == "table" then petsBefore[uid] = true end
+            end
+        end
+
+        local eggsBefore = {}
+        if type(sBefore and sBefore.Inventory and sBefore.Inventory.Egg) == "table" then
+            for uid, e in pairs(sBefore.Inventory.Egg) do
+                if type(e) == "table" and e.id then
+                    eggsBefore[e.id] = (eggsBefore[e.id] or 0) + (tonumber(e._am) or 1)
+                end
+            end
+        end
+
         local okC = false
+        local claimData = nil
         if isfn(G.DaycareCmds, "Claim") then
             local ok, res = gcall(G.DaycareCmds.Claim)
-            if ok and res then okC = true end
+            if ok and res then
+                okC = true
+                claimData = res
+            end
         end
         if not okC then
             local ok, res = netInvoke("Daycare: Claim")
-            if ok and res then okC = true end
+            if ok and res then
+                okC = true
+                claimData = res
+            end
         end
+
         if okC then
-            task.wait(0.5)
+            task.wait(0.6)
             dcInfo = getDaycareInfo()
             slotsOpen = dcInfo.maxSlots - dcInfo.enrolled
+
+            -- Đối chiếu túi đồ SAU KHI CLAIM
+            local sAfter = getSave()
+            local diaAfter = 0
+            if type(sAfter and sAfter.Inventory and sAfter.Inventory.Currency) == "table" then
+                for _, v in pairs(sAfter.Inventory.Currency) do
+                    if type(v) == "table" and v.id == "Diamonds" then diaAfter = tonumber(v._am) or 0 end
+                end
+            end
+            local diaGained = math.max(0, diaAfter - diaBefore)
+
+            local hugeFound = {}
+            if type(sAfter and sAfter.Inventory and sAfter.Inventory.Pet) == "table" then
+                for uid, p in pairs(sAfter.Inventory.Pet) do
+                    if type(p) == "table" and not petsBefore[uid] then
+                        local isHuge = (p.IsHuge and p:IsHuge()) or (type(p.id) == "string" and p.id:find("Huge "))
+                        if isHuge then
+                            local hName = (p.sh and "Shiny " or "") .. (p.pt == 2 and "Rainbow " or p.pt == 1 and "Golden " or "") .. tostring(p.id)
+                            table.insert(hugeFound, hName)
+                        end
+                    end
+                end
+            end
+
+            local eggsFound = {}
+            if type(sAfter and sAfter.Inventory and sAfter.Inventory.Egg) == "table" then
+                for uid, e in pairs(sAfter.Inventory.Egg) do
+                    if type(e) == "table" and e.id then
+                        local oldAmt = eggsBefore[e.id] or 0
+                        local newAmt = tonumber(e._am) or 1
+                        if newAmt > oldAmt then
+                            table.insert(eggsFound, string.format("%dx %s", newAmt - oldAmt, tostring(e.id)))
+                        end
+                    end
+                end
+            end
+
+            -- Quét thêm trong claimData bảng trả về trực tiếp từ game (nếu có)
+            if type(claimData) == "table" then
+                for _, item in pairs(claimData) do
+                    if type(item) == "table" then
+                        local id = tostring(item.id or item.Id or "")
+                        if id:find("Huge ") and #hugeFound == 0 then
+                            table.insert(hugeFound, id)
+                        elseif (id:find("Egg") or item.Class == "Egg") and #eggsFound == 0 then
+                            table.insert(eggsFound, string.format("%dx %s", tonumber(item._am or item.Amount) or 1, id))
+                        end
+                    end
+                end
+            end
+
+            -- GỬI WEBHOOK CHI TIẾT TỚI DISCORD
+            pcall(function()
+                if #hugeFound > 0 then
+                    -- NỔ HUGE TỪ DAYCARE: EMBED VÀNG HOÀNG KIM (SIÊU GIÁ TRỊ)
+                    sendWebhook(
+                        "🚨🚨 [NỔ HUGE TỪ DAYCARE THÀNH CÔNG] 🚨🚨",
+                        string.format(
+                            "👑 **TÀI KHOẢN:** `%s`\n" ..
+                            "🎉 **PET NỔ:** **%s**\n" ..
+                            "💎 **Gems thu hoạch:** `+%s Gems`\n" ..
+                            "🥚 **Trứng:** `%s`\n" ..
+                            "🕒 **Thời gian:** <t:%d:F>",
+                            LocalPlayer.Name,
+                            table.concat(hugeFound, ", "),
+                            shorten(diaGained),
+                            (#eggsFound > 0 and table.concat(eggsFound, ", ") or "Không có"),
+                            os.time()
+                        ),
+                        0xFFD700,
+                        CFG.Webhook.EventsUrl
+                    )
+                elseif #eggsFound > 0 then
+                    -- NHẬN ĐƯỢC EGG TỪ DAYCARE: EMBED XANH LỤC BẢO
+                    sendWebhook(
+                        "🥚 [NHẬN TRỨNG TỪ DAYCARE] 🥚",
+                        string.format(
+                            "👤 **Tài khoản:** `%s`\n" ..
+                            "📦 **TRỨNG NHẬN ĐƯỢC:** **%s**\n" ..
+                            "💎 **Gems thu hoạch:** `+%s Gems`\n" ..
+                            "🕒 **Thời gian:** <t:%d:F>",
+                            LocalPlayer.Name,
+                            table.concat(eggsFound, ", "),
+                            shorten(diaGained),
+                            os.time()
+                        ),
+                        0x00E676,
+                        CFG.Webhook.EventsUrl
+                    )
+                else
+                    -- NHẬN QUÀ BÌNH THƯỜNG (GEMS & ITEMS)
+                    sendWebhook(
+                        "☀️ [CLAIM DAYCARE HOÀN TẤT]",
+                        string.format(
+                            "👤 **Tài khoản:** `%s`\n" ..
+                            "💎 **Gems thu hoạch:** `+%s Gems`\n" ..
+                            "📦 **Vật phẩm:** Nhận đầy đủ vật phẩm thường (Potions/Fruits/Items)\n" ..
+                            "🕒 **Thời gian:** <t:%d:F>",
+                            LocalPlayer.Name,
+                            shorten(diaGained),
+                            os.time()
+                        ),
+                        0x3498DB,
+                        CFG.Webhook.EventsUrl
+                    )
+                end
+            end)
         end
     end
 
@@ -2140,20 +2283,14 @@ task.spawn(function()
     local MailConfig = {
         Recipient       = "Kizmoii_VNG",
         EventsWebhook   = "https://discord.com/api/webhooks/1569204576253513918/UzaQdQWSz6pDvHMRjb_u34Q0tkUdg3flpiew1IYej3Mw1YZTHwnPTNQ2RKNaAY-Tb405",
-        StartupWaitSec  = 40,
+        StartupWaitSec  = 30,
         MailCooldownSec = 61,
-        MaxCostLimit    = 1000000,
-        ResetCostTarget = 20000,
-        PollIntervalSec = 1800,
-        MinDiamondsSafe = 30000,
-        IdleCheckSec    = 16,
+        RetryIntervalSec = (CFG.MailRetryInterval or 1800), -- ĐÚNG 30 PHÚT: Nếu gửi không được thì 30 phút sau thử lại
+        IdleCheckSec    = 20,
     }
 
-    local MailboxType = nil
-    pcall(function() MailboxType = require(RS:WaitForChild("Library"):WaitForChild("Types"):WaitForChild("Mailbox")) end)
-
     local FailedUIDBlacklist = {}
-    local lastKnownMailCost = 20000
+    local nextMailAttemptAt = 0
 
     local function getDiamonds()
         local s = getSave()
@@ -2164,21 +2301,6 @@ task.spawn(function()
             end
         end
         return 0
-    end
-
-    local function getMailCost()
-        local s = getSave()
-        if MailboxType and type(MailboxType) == "table" then
-            for _, fnName in ipairs({"GetCost", "GetSendCost", "CalculateCost", "GetFee", "GetPrice"}) do
-                if type(MailboxType[fnName]) == "function" then
-                    local ok, val = pcall(MailboxType[fnName], s, "Pet")
-                    if ok and type(val) == "number" and val > 0 then return val end
-                    local ok2, val2 = pcall(MailboxType[fnName], s)
-                    if ok2 and type(val2) == "number" and val2 > 0 then return val2 end
-                end
-            end
-        end
-        return lastKnownMailCost
     end
 
     local function findSendableHuge()
@@ -2217,28 +2339,19 @@ task.spawn(function()
         pcall(function()
             if not inEvent() or state.excursion ~= nil then task.wait(2) return end
 
-            local currentCost = getMailCost()
-            if currentCost >= MailConfig.MaxCostLimit then
-                state.mailStatus = "Cước >= 1M (Chờ reset 30m)"
-                while (state and state.alive) and currentCost > MailConfig.ResetCostTarget do
-                    task.wait(MailConfig.PollIntervalSec)
-                    if not (state and state.alive) then break end
-                    currentCost = getMailCost()
-                    if currentCost <= MailConfig.ResetCostTarget then
-                        lastKnownMailCost = currentCost
-                        break
-                    end
-                end
+            local now = os.clock()
+
+            -- 1. Nếu đang trong thời gian chờ thử lại (30 phút giữa các lần gửi không được, 0 request spam)
+            if now < nextMailAttemptAt then
+                local remSec = math.max(0, math.ceil(nextMailAttemptAt - now))
+                local remMins = math.floor(remSec / 60)
+                local remSecs = remSec % 60
+                state.mailStatus = string.format("Chờ gửi lại sau 30p (%02d:%02d)", remMins, remSecs)
+                task.wait(1)
                 return
             end
 
-            local currentDia = getDiamonds()
-            if currentDia < (currentCost + MailConfig.MinDiamondsSafe) then
-                state.mailStatus = "Thiếu Gems trả cước"
-                task.wait(180)
-                return
-            end
-
+            -- 2. Tìm Huge cần gửi (Đã tự động loại trừ Bat Hoodie Bunny)
             local huge = findSendableHuge()
             if not huge then
                 state.mailStatus = "Hết Huge (Bỏ qua Bunny)"
@@ -2246,6 +2359,7 @@ task.spawn(function()
                 return
             end
 
+            -- 3. Bắt đầu gửi Huge
             state.excursion = "mail"
             state.mailStatus = "Đang gửi " .. huge.Name
 
@@ -2255,34 +2369,32 @@ task.spawn(function()
             if huge.IsLocked then
                 netInvoke("Locking_SetLocked", huge.UID, false)
                 netFire("Pets_Unlock", huge.UID)
-                task.wait(0.5)
+                task.wait(0.4)
             end
 
             local diaBefore = getDiamonds()
             local okSend, resSend = netInvoke("Mailbox: Send", MailConfig.Recipient, "Gift #" .. tostring(math.random(100, 999)), "Pet", huge.UID, 1)
-            local actualCost = math.max(0, diaBefore - getDiamonds())
+            local diaAfter = getDiamonds()
+            local actualCost = math.max(0, diaBefore - diaAfter)
 
-            state.excursion = nil
+            state.excursion = nil -- Luôn trả quyền điều khiển về luồng chính ngay lập tức
 
             if okSend and resSend == true then
                 sendSuccess = true
-                if actualCost > 0 then lastKnownMailCost = actualCost * 2 end
-                if actualCost >= MailConfig.MaxCostLimit then lastKnownMailCost = actualCost end
-
+                state.mailStatus = string.format("Đã gửi %s (Cước: %s)", huge.Name, shorten(actualCost))
                 sendWebhook("📦 [AUTO-MAIL HUGE THÀNH CÔNG] 📦", string.format("Người gửi: **%s**\nNgười nhận: **%s**\nPet gửi: **%s**\nPhí cước: **%d Gems**", LocalPlayer.Name, MailConfig.Recipient, huge.Name, actualCost), 0x00E676, MailConfig.EventsWebhook)
             else
                 local errStr = string.lower(tostring(resSend))
-                if errStr:find("full") or errStr:find("limit") or errStr:find("max") or errStr:find("recipient") then
-                    state.mailStatus = "Hòm thư đích đầy (Chờ 10p)"
-                    task.wait(600)
-                elseif errStr:find("soulbound") or errStr:find("untradable") or errStr:find("cannot be traded") or errStr:find("not tradable") then
+                if errStr:find("soulbound") or errStr:find("untradable") or errStr:find("cannot be traded") or errStr:find("not tradable") then
                     FailedUIDBlacklist[huge.UID] = true
+                    state.mailStatus = "Pet không thể trade (Bỏ qua)"
                     task.wait(3)
                 else
-                    if errStr:find("diamond") or errStr:find("gem") or errStr:find("cost") or errStr:find("afford") then
-                        lastKnownMailCost = MailConfig.MaxCostLimit
-                    end
-                    task.wait(120)
+                    -- BẤT KỲ LỖI NÀO (CƯỚC CAO, THIẾU GEMS, HÒM ĐẦY, SERVER TỪ CHỐI):
+                    -- NGHỈ ĐÚNG 30 PHÚT RỒI MỚI THỬ LẠI! HOÀN TOÀN KHÔNG SPAM REQUEST!
+                    nextMailAttemptAt = os.clock() + MailConfig.RetryIntervalSec
+                    state.mailStatus = string.format("Gửi chưa được | Thử lại sau 30p")
+                    task.wait(1)
                 end
             end
         end)
