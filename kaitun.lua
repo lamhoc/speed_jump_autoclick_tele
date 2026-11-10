@@ -139,31 +139,42 @@ pcall(function()
             v.Enabled = false
         end
     end
-
-    local function stripHeavyVisuals(obj)
-        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-            obj.Enabled = false
-        elseif obj:IsA("Decal") or obj:IsA("Texture") then
-            obj.Transparency = 1
-        end
-    end
-    for _, obj in ipairs(workspace:GetDescendants()) do stripHeavyVisuals(obj) end
-    workspace.DescendantAdded:Connect(stripHeavyVisuals)
 end)
 
--- Triệt tiêu mô hình Pet client & Animation thừa để giải phóng CPU cho 80 acc
-pcall(function()
-    local things = workspace:FindFirstChild("__THINGS")
-    if things then
-        local pets = things:FindFirstChild("Pets")
-        if pets then
-            for _, p in ipairs(pets:GetChildren()) do pcall(function() p:Destroy() end) end
-            pets.ChildAdded:Connect(function(c)
-                task.defer(function() pcall(function() c:Destroy() end) end)
-            end)
+-- Hàm quét và dọn sạch rác đồ họa/mô hình thừa (KHÔNG DÙNG DescendantAdded để chống Crash Tab 24/24)
+local function purgeHeavyVisuals()
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj.Transparency = 1
+            end
         end
-    end
-end)
+    end)
+    pcall(function()
+        local things = workspace:FindFirstChild("__THINGS")
+        if things then
+            local pets = things:FindFirstChild("Pets")
+            if pets then
+                for _, p in ipairs(pets:GetChildren()) do pcall(function() p:Destroy() end) end
+            end
+            local dmg = things:FindFirstChild("DamageNumbers")
+            if dmg then
+                for _, d in ipairs(dmg:GetChildren()) do pcall(function() d:Destroy() end) end
+            end
+            local orbs = things:FindFirstChild("Orbs")
+            if orbs then
+                for _, o in ipairs(orbs:GetChildren()) do pcall(function() o:Destroy() end) end
+            end
+        end
+        local debris = workspace:FindFirstChild("__DEBRIS")
+        if debris then
+            for _, deb in ipairs(debris:GetChildren()) do pcall(function() deb:Destroy() end) end
+        end
+    end)
+end
+pcall(purgeHeavyVisuals)
 
 pcall(function()
     local char = LocalPlayer.Character
@@ -180,12 +191,13 @@ pcall(function()
     end
 end)
 
--- Thu gom rác bộ nhớ (Garbage Collection) định kỳ mỗi 120s
+-- Thu gom rác bộ nhớ (Full Garbage Collection) định kỳ mỗi 60s - Chống rò rỉ RAM cho 80 acc treo 24/24
 task.spawn(function()
     while true do
-        task.wait(120)
+        task.wait(60)
+        pcall(purgeHeavyVisuals)
         pcall(function()
-            collectgarbage("step", 200)
+            collectgarbage("collect")
         end)
     end
 end)
@@ -281,6 +293,10 @@ local state = {
     nextPotionAt = 0,
     nextClaimGiftsAt = 0,
     currentZoneNumber = 1,
+    sessionStartCoins = nil,
+    lastStatusCoins = nil,
+    lastStatusTreats = nil,
+    lastStatusHatched = nil,
 }
 
 local connections = {}
@@ -1467,12 +1483,18 @@ local function checkAndRunCombine()
                 local recName = targetRecipeName
                 for _, r in ipairs(recipes) do if r.index == claim.RecipeIndex then recName = r.name end end
                 state.combineStatus = "Đã nhận " .. recName
-                sendWebhook("🎉 GHÉP THÀNH CÔNG HUGE!", "Đã nhận thành công **" .. recName .. "**!", 0xFFD700)
+                -- Webhook chỉ báo khi nhận Huge và tên acc nhận Huge (không kèm time)
+                sendWebhook(
+                    "🎉 [NHẬN HUGE GHÉP THÀNH CÔNG] 🎉",
+                    string.format("👑 **Tài khoản:** `%s`\n🎉 **Pet nhận được:** **%s**", LocalPlayer.Name, recName),
+                    0xFFD700,
+                    CFG.Webhook.EventsUrl
+                )
             end
             task.wait(0.6)
         end
 
-        -- 2. Tự động bắt đầu mẻ ghép mới khi đủ nguyên liệu
+        -- 2. Tự động bắt đầu mẻ ghép mới khi đủ nguyên liệu (KHÔNG GỬI WEBHOOK BẮT ĐẦU)
         for _, r in ipairs(starts) do
             local again = combineRecipes()
             local fresh
@@ -1482,7 +1504,6 @@ local function checkAndRunCombine()
                 if okS and resS then
                     local durMin = r.duration and math.floor(r.duration / 60) or 0
                     state.combineStatus = string.format("Đang ghép %s (%dp)", r.name:gsub("Halloween ", ""):gsub("Huge ", ""), durMin)
-                    sendWebhook("🛠️ BẮT ĐẦU GHÉP HUGE", string.format("Bắt đầu mẻ ghép **%s** (Thời gian: %d phút)", r.name, durMin), 0x00E676)
                 else
                     state.combineStatus = "Ghép lỗi: " .. tostring(resS)
                 end
@@ -1808,61 +1829,56 @@ local function checkAndRunDaycare()
                 end
             end
 
-            -- GỬI WEBHOOK CHI TIẾT TỚI DISCORD
+            -- GỬI WEBHOOK KHI NỔ MEEBO IN A SPACESHIP HOẶC TRÚNG GARGANTUAN MACHINE HIPPOMELON EGG (THEO YÊU CẦU CỦA DJ)
             pcall(function()
-                if #hugeFound > 0 then
-                    -- NỔ HUGE TỪ DAYCARE: EMBED VÀNG HOÀNG KIM (SIÊU GIÁ TRỊ)
+                local targetHugeFound = {}
+                for _, h in ipairs(hugeFound) do
+                    local strH = tostring(h)
+                    if strH:find("Meebo in a Spaceship") or strH:find("Meebo") or strH:find("Huge ") then
+                        table.insert(targetHugeFound, strH)
+                    end
+                end
+
+                local targetEggFound = {}
+                for _, e in ipairs(eggsFound) do
+                    local strE = tostring(e)
+                    if strE:find("Gargantuan Machine Hippomelon Egg") or strE:find("Hippomelon") or strE:find("Gargantuan") then
+                        table.insert(targetEggFound, strE)
+                    end
+                end
+
+                if #targetHugeFound > 0 then
+                    -- NỔ HUGE DAYCARE: EMBED VÀNG HOÀNG KIM (SIÊU GIÁ TRỊ)
                     sendWebhook(
-                        "🚨🚨 [NỔ HUGE TỪ DAYCARE THÀNH CÔNG] 🚨🚨",
+                        "🚨🚨 [NỔ HUGE DAYCARE: MEEBO IN A SPACESHIP] 🚨🚨",
                         string.format(
                             "👑 **TÀI KHOẢN:** `%s`\n" ..
                             "🎉 **PET NỔ:** **%s**\n" ..
-                            "💎 **Gems thu hoạch:** `+%s Gems`\n" ..
-                            "🥚 **Trứng:** `%s`\n" ..
-                            "🕒 **Thời gian:** <t:%d:F>",
+                            "💎 **Gems thu hoạch:** `+%s Gems`",
                             LocalPlayer.Name,
-                            table.concat(hugeFound, ", "),
-                            shorten(diaGained),
-                            (#eggsFound > 0 and table.concat(eggsFound, ", ") or "Không có"),
-                            os.time()
+                            table.concat(targetHugeFound, ", "),
+                            shorten(diaGained)
                         ),
                         0xFFD700,
                         CFG.Webhook.EventsUrl
                     )
-                elseif #eggsFound > 0 then
-                    -- NHẬN ĐƯỢC EGG TỪ DAYCARE: EMBED XANH LỤC BẢO
+                elseif #targetEggFound > 0 then
+                    -- TRÚNG TRỨNG GARGANTUAN MACHINE HIPPOMELON EGG: EMBED XANH LỤC BẢO
                     sendWebhook(
-                        "🥚 [NHẬN TRỨNG TỪ DAYCARE] 🥚",
+                        "🥚🔥 [TRÚNG TRỨNG GARGANTUAN HIPPOMELON TỪ DAYCARE] 🔥🥚",
                         string.format(
-                            "👤 **Tài khoản:** `%s`\n" ..
-                            "📦 **TRỨNG NHẬN ĐƯỢC:** **%s**\n" ..
-                            "💎 **Gems thu hoạch:** `+%s Gems`\n" ..
-                            "🕒 **Thời gian:** <t:%d:F>",
+                            "👑 **TÀI KHOẢN:** `%s`\n" ..
+                            "📦 **TRỨNG ĐỈNH:** **%s**\n" ..
+                            "💎 **Gems thu hoạch:** `+%s Gems`",
                             LocalPlayer.Name,
-                            table.concat(eggsFound, ", "),
-                            shorten(diaGained),
-                            os.time()
+                            table.concat(targetEggFound, ", "),
+                            shorten(diaGained)
                         ),
                         0x00E676,
                         CFG.Webhook.EventsUrl
                     )
-                else
-                    -- NHẬN QUÀ BÌNH THƯỜNG (GEMS & ITEMS)
-                    sendWebhook(
-                        "☀️ [CLAIM DAYCARE HOÀN TẤT]",
-                        string.format(
-                            "👤 **Tài khoản:** `%s`\n" ..
-                            "💎 **Gems thu hoạch:** `+%s Gems`\n" ..
-                            "📦 **Vật phẩm:** Nhận đầy đủ vật phẩm thường (Potions/Fruits/Items)\n" ..
-                            "🕒 **Thời gian:** <t:%d:F>",
-                            LocalPlayer.Name,
-                            shorten(diaGained),
-                            os.time()
-                        ),
-                        0x3498DB,
-                        CFG.Webhook.EventsUrl
-                    )
                 end
+                -- CÁC PHẦN THƯỞNG THƯỜNG / TRỨNG THƯỜNG: HOÀN TOÀN KHÔNG BẮN WEBHOOK
             end)
         end
     end
@@ -2040,12 +2056,17 @@ local function updateKizhubGui()
     local upStr = formatUptime()
     local zData = K.ZONES[state.currentZoneNumber]
     
+    local rawCoins = currency(K.CURRENCY) or 0
+    if state.sessionStartCoins == nil then state.sessionStartCoins = rawCoins end
+    local deltaCoinsSession = math.max(0, rawCoins - state.sessionStartCoins)
+    local coinsDisplay = (deltaCoinsSession > 0) and string.format("%s (+%s)", shorten(rawCoins), shorten(deltaCoinsSession)) or shorten(rawCoins)
+
     -- Cập nhật thông số cơ bản (Bọc riêng từng dòng để tránh gãy luồng)
     pcall(function() uiRefs.ZoneLabel.Text = string.format("Zone %d/8 (%s)", state.currentZoneNumber or 1, zData and zData.Name or "") end)
     pcall(function() uiRefs.CombineLabel.Text = state.combineStatus end)
     pcall(function() uiRefs.MailLabel.Text = state.mailStatus end)
     pcall(function() uiRefs.DaycareLabel.Text = state.daycareStatus end)
-    pcall(function() uiRefs.CoinsLabel.Text = shorten(currency(K.CURRENCY)) end)
+    pcall(function() uiRefs.CoinsLabel.Text = coinsDisplay end)
     pcall(function() uiRefs.TreatsLabel.Text = string.format("%s Treats | %s quả", shorten(currency(K.TREATS)), shorten(state.totalEggsHatched)) end)
 
     -- Cập nhật danh sách 8 Upgrades (Khớp hoàn toàn với Save.Get().EventUpgrades)
@@ -2252,29 +2273,39 @@ task.spawn(function()
                 task.wait(math.random(1, 120))
                 
                 local upStr = formatUptime()
-                local currentCoins = shorten(currency(K.CURRENCY) or 0)
-                local currentTreats = shorten(currency(K.TREATS) or 0)
-                local totalHatched = shorten(state.totalEggsHatched or 0)
+                local rawCoins = currency(K.CURRENCY) or 0
+                local rawTreats = currency(K.TREATS) or 0
+                local rawHatched = state.totalEggsHatched or 0
+
+                -- Tính mức tăng sau mỗi 30 phút (ví dụ: 1M (+1M)) theo đúng yêu cầu của dj
+                local lastCoins = state.lastStatusCoins or rawCoins
+                local lastTreats = state.lastStatusTreats or rawTreats
+                local lastHatched = state.lastStatusHatched or rawHatched
+
+                local deltaCoins = math.max(0, rawCoins - lastCoins)
+                local deltaTreats = math.max(0, rawTreats - lastTreats)
+                local deltaHatched = math.max(0, rawHatched - lastHatched)
+
+                state.lastStatusCoins = rawCoins
+                state.lastStatusTreats = rawTreats
+                state.lastStatusHatched = rawHatched
+
+                local coinsDisplay = string.format("%s (+%s)", shorten(rawCoins), shorten(deltaCoins))
+                local treatsDisplay = string.format("%s (+%s)", shorten(rawTreats), shorten(deltaTreats))
+                local hatchedDisplay = string.format("%s (+%s)", shorten(rawHatched), shorten(deltaHatched))
+
                 local currentZ = state.currentZoneNumber or 1
                 local zoneInfo = K.ZONES[currentZ]
                 local zoneTitle = string.format("Zone %d/8 (%s)", currentZ, zoneInfo and zoneInfo.Name or "Unknown")
 
                 local statusDesc = string.format(
                     "⏱️ **Thời gian chạy:** `%s`\n📍 **Khu vực:** `%s`\n🍬 **Candy Coins:** `%s`\n🎃 **Treats:** `%s`\n🥚 **Trứng đã nở:** `%s` quả\n🛠️ **Ghép Huge:** `%s`\n📬 **Hòm thư:** `%s`\n🏡 **Daycare:** `%s`",
-                    upStr, zoneTitle, currentCoins, currentTreats, totalHatched, state.combineStatus or "Rảnh", state.mailStatus or "Rảnh", state.daycareStatus or "Rảnh"
+                    upStr, zoneTitle, coinsDisplay, treatsDisplay, hatchedDisplay, state.combineStatus or "Rảnh", state.mailStatus or "Rảnh", state.daycareStatus or "Rảnh"
                 )
 
                 sendWebhook("🟢 [STATUS 30' REPORT] " .. LocalPlayer.Name, statusDesc, 0x00E676, wb.StatusUrl)
             end
         end)
-    end
-end)
-
--- Dọn RAM định kỳ (90s)
-task.spawn(function()
-    while (state and state.alive) do
-        task.wait(90)
-        pcall(function() collectgarbage("collect") end)
     end
 end)
 
