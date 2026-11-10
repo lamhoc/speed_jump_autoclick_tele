@@ -70,7 +70,8 @@ local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = (pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")) or nil
+local VirtualInputManager = nil
+pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
 local LocalPlayer = Players.LocalPlayer
 
 repeat task.wait(0.2) until LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -519,63 +520,30 @@ end
 
 -- ================= HỆ THỐNG ANTI-AFK GOD MODE & CHỐNG KICK / REJOIN 15' =================
 local function installGodModeAntiAfk()
-    -- 1. Chặn toàn diện TeleportService & Kick từ Client (__namecall & hookfunction)
+    -- 1. Chặn an toàn TeleportService & Kick từ Client qua __namecall (Tuyệt đối không đệ quy)
     pcall(function()
-        if type(hookmetamethod) == "function" then
+        if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
             local oldNamecall
-            oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local function handler(self, ...)
                 local method = getnamecallmethod()
-                -- Chặn tất cả các hàm dịch chuyển / đổi server của TeleportService (Teleport, TeleportAsync, ...)
-                if typeof(self) == "Instance" and (self == TeleportService or self:IsA("TeleportService")) then
-                    if not (state and state.isRejoining) then
-                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (__namecall: " .. tostring(method) .. ")!")
-                        return
-                    end
+                -- So sánh tham chiếu trực tiếp (self == TeleportService), KHÔNG gọi self:IsA() để tránh C-Stack Overflow
+                if self == TeleportService and not (state and state.isRejoining) then
+                    return nil
                 end
-                -- Chặn LocalPlayer:Kick từ Client
-                if method == "Kick" and typeof(self) == "Instance" and self:IsA("Player") then
-                    if not (state and state.isRejoining) then
-                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Kick!")
-                        return
-                    end
+                if method == "Kick" and self == LocalPlayer and not (state and state.isRejoining) then
+                    return nil
                 end
                 return oldNamecall(self, ...)
-            end)
-        end
-
-        if type(hookfunction) == "function" then
-            local tpMethods = { "Teleport", "TeleportAsync", "TeleportToPlaceInstance", "TeleportToPrivateServer", "TeleportToSpawnByName" }
-            for _, fnName in ipairs(tpMethods) do
-                pcall(function()
-                    if typeof(TeleportService[fnName]) == "function" then
-                        local oldFn
-                        oldFn = hookfunction(TeleportService[fnName], function(self, ...)
-                            if not (state and state.isRejoining) then
-                                warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (" .. fnName .. ")!")
-                                return
-                            end
-                            return oldFn(self, ...)
-                        end)
-                    end
-                end)
             end
-
-            pcall(function()
-                local oldKick
-                oldKick = hookfunction(LocalPlayer.Kick, function(self, ...)
-                    if not (state and state.isRejoining) then
-                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Kick!")
-                        return
-                    end
-                    return oldKick(self, ...)
-                end)
-            end)
+            local wrap = (type(newcclosure) == "function" and newcclosure(handler)) or handler
+            oldNamecall = hookmetamethod(game, "__namecall", wrap)
         end
     end)
 
-    -- 2. Đè Network.Fire: Luôn báo với Server là Client đang Active / Focus cửa sổ
+    -- 2. Đè Network.Fire an toàn: Luôn báo với Server là Client đang Active / Focus cửa sổ
     pcall(function()
         if type(G.Network) == "table" and type(G.Network.Fire) == "function" then
+            if type(setreadonly) == "function" then pcall(setreadonly, G.Network, false) end
             local origFire = G.Network.Fire
             G.Network.Fire = function(name, ...)
                 if name == "Idle Tracking: Focus Changed" then
@@ -597,13 +565,13 @@ local function installGodModeAntiAfk()
 
     local function performAfkNudge()
         pcall(function()
-            -- Bắn Remote dập tắt idle timer trên server
+            -- Bắn Remote dập tắt idle timer trên server Big Games
             netFire("Idle Tracking: Stop Timer")
             netFire("Idle Tracking: Update Timer")
-            netFire("Idle Tracking: Focus Changed", true)
 
             -- Nhảy nhẹ
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 then
                 hum:ChangeState(Enum.HumanoidStateType.Jumping)
                 hum.Jump = true
@@ -611,13 +579,17 @@ local function installGodModeAntiAfk()
 
             -- VirtualUser Click chuột phải
             local cam = workspace.CurrentCamera
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
-            VirtualUser:Button2Down(Vector2.new(0, 0), cam and cam.CFrame or CFrame.new())
-            task.wait(0.05)
-            VirtualUser:Button2Up(Vector2.new(0, 0), cam and cam.CFrame or CFrame.new())
+            if VirtualUser and cam then
+                pcall(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
+                    VirtualUser:Button2Down(Vector2.new(0, 0), cam.CFrame)
+                    task.wait(0.05)
+                    VirtualUser:Button2Up(Vector2.new(0, 0), cam.CFrame)
+                end)
+            end
 
-            -- VirtualInputManager chuột & phím
+            -- VirtualInputManager chuột & phím F
             if VirtualInputManager then
                 pcall(function()
                     VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0)
