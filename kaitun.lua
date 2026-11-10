@@ -28,7 +28,7 @@ genv.KaitunConfig = genv.KaitunConfig or {
     
     AutoTap = {
         Enabled = true,
-        TapDelay = 0.25,
+        TapDelay = 0.5,
     },
 
     AutoTreatUpgrades = true,
@@ -38,11 +38,11 @@ genv.KaitunConfig = genv.KaitunConfig or {
     TargetCombineRecipe = "Huge Bat Hoodie Bunny",
     CombineCooldown = 60,
 
-    AutoDaycare = true,
+    AutoDaycare = false, -- [BẬT / TẮT AUTO DAYCARE]: true = Bật, false = Tắt hoàn toàn (Chỉnh trên Source Code)
     AutoMailHuge = true,
     MailRetryInterval = 1800, -- Nếu gửi không được: đúng 30 phút sau mới thử lại, chống spam 100%
 
-    AfkPulseInterval = 180,
+    AfkPulseInterval = 35, -- [CHỐNG KICK 15']: Nhịp 35s giữ liên lạc liên tục với server, chống kick 15' BigGames 100%
 
     Webhook = {
         Enabled = true,
@@ -69,6 +69,8 @@ local SoundService = game:GetService("SoundService")
 local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = (pcall(function() return game:GetService("VirtualInputManager") end) and game:GetService("VirtualInputManager")) or nil
 local LocalPlayer = Players.LocalPlayer
 
 repeat task.wait(0.2) until LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -281,7 +283,7 @@ local state = {
     totalEggsHatched = 0,
     combineStatus = "Rảnh",
     mailStatus = "Rảnh",
-    daycareStatus = "Rảnh",
+    daycareStatus = (CFG and CFG.AutoDaycare) and "Rảnh" or "Đã tắt (Config)",
     lastSuccessfulHatch = os.clock(),
     nextHatchAttemptAt = 0,
     nextUnlockTryAt = 0,
@@ -306,6 +308,35 @@ local restoreFns = {}
 local function netInvoke(name, ...)
     if isfn(G.Network, "Invoke") then return gcall(G.Network.Invoke, name, ...) end
     return false
+end
+
+-- Gọi Network.Invoke an toàn có timeout để chống treo thread vĩnh viễn khi server không phản hồi
+local function netInvokeTimeout(timeoutSec, name, ...)
+    if not isfn(G.Network, "Invoke") then return false, "Network.Invoke unavailable" end
+    timeoutSec = tonumber(timeoutSec) or 5
+    local done = false
+    local result = nil
+    local args = table.pack(...)
+    
+    task.spawn(function()
+        local r = table.pack(gcall(G.Network.Invoke, name, table.unpack(args, 1, args.n)))
+        result = r
+        done = true
+    end)
+
+    local start = os.clock()
+    while not done do
+        if os.clock() - start >= timeoutSec then
+            done = true
+            return false, "Timeout"
+        end
+        task.wait(0.1)
+    end
+
+    if result then
+        return table.unpack(result, 1, result.n)
+    end
+    return false, "No result"
 end
 
 local function netFire(name, ...)
@@ -416,7 +447,7 @@ local function sendWebhook(title, description, color, customUrl)
     end)
 end
 
--- ================= BỘ THEO DÕI NỔ HUGE (HUGE WATCHER) =================
+-- ================= BỘ THEO DÕI NỔ HUGE & TITANIC (HUGE / TITANIC WATCHER) =================
 local knownHugeUids = {}
 local isHugeCacheInitialized = false
 
@@ -428,8 +459,9 @@ local function checkNewHugeHatched()
     if not isHugeCacheInitialized then
         for uid, p in pairs(pets) do
             if type(p) == "table" and type(p.id) == "string" then
+                local isTitanic = (p.IsTitanic and p:IsTitanic()) or (p.id:find("Titanic ") ~= nil)
                 local isHuge = (p.IsHuge and p:IsHuge()) or (p.id:find("Huge ") and not p.id:find("Huge Hunter"))
-                if isHuge then knownHugeUids[uid] = true end
+                if isHuge or isTitanic then knownHugeUids[uid] = true end
             end
         end
         isHugeCacheInitialized = true
@@ -438,16 +470,28 @@ local function checkNewHugeHatched()
 
     for uid, p in pairs(pets) do
         if type(p) == "table" and type(p.id) == "string" then
+            local isTitanic = (p.IsTitanic and p:IsTitanic()) or (p.id:find("Titanic ") ~= nil)
             local isHuge = (p.IsHuge and p:IsHuge()) or (p.id:find("Huge ") and not p.id:find("Huge Hunter"))
-            if isHuge and not knownHugeUids[uid] then
+            if (isHuge or isTitanic) and not knownHugeUids[uid] then
                 knownHugeUids[uid] = true
                 local pName = (p.sh and "Shiny " or "") .. (p.pt == 2 and "Rainbow " or p.pt == 1 and "Golden " or "") .. p.id
-                sendWebhook(
-                    "💥 [NỔ HUGE PET THÀNH CÔNG] 💥",
-                    string.format("Người chơi: **%s**\nPet nhận được: **%s**\nUID: `%s`", LocalPlayer.Name, pName, tostring(uid)),
-                    0xFFD700,
-                    CFG.Webhook.EventsUrl
-                )
+                if isTitanic then
+                    -- NỔ SIÊU PHẨM TITANIC (TỪ TRỨNG HOẶC FREE GIFT): EMBED TÍM CỰC HIẾM
+                    sendWebhook(
+                        "👑👑 [NỔ SIÊU PHẨM TITANIC THÀNH CÔNG] 👑👑",
+                        string.format("Người chơi: **%s**\n🌟 Siêu Phẩm: **%s**\nUID: `%s`", LocalPlayer.Name, pName, tostring(uid)),
+                        0x9B59B6,
+                        CFG.Webhook.EventsUrl
+                    )
+                else
+                    -- NỔ HUGE (TỪ TRỨNG, FREE GIFT HOẶC MÁY GHÉP): EMBED VÀNG
+                    sendWebhook(
+                        "💥 [NỔ HUGE PET THÀNH CÔNG] 💥",
+                        string.format("Người chơi: **%s**\nPet nhận được: **%s**\nUID: `%s`", LocalPlayer.Name, pName, tostring(uid)),
+                        0xFFD700,
+                        CFG.Webhook.EventsUrl
+                    )
+                end
             end
         end
     end
@@ -473,45 +517,76 @@ local function forceRejoin(reason)
     task.wait(999)
 end
 
--- ================= HỆ THỐNG ANTI-AFK GOD MODE & CHỐNG KICK 15' =================
+-- ================= HỆ THỐNG ANTI-AFK GOD MODE & CHỐNG KICK / REJOIN 15' =================
 local function installGodModeAntiAfk()
-    -- 1. Chặn triệt để BigGames gọi TeleportService từ Client để Server Hop sau 15 phút (__namecall & hookfunction)
+    -- 1. Chặn toàn diện TeleportService & Kick từ Client (__namecall & hookfunction)
     pcall(function()
         if type(hookmetamethod) == "function" then
             local oldNamecall
             oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
                 local method = getnamecallmethod()
-                if (method == "Teleport" or method == "TeleportToPlaceInstance" or method == "teleport" or method == "TeleportToSpawnByName") and typeof(self) == "Instance" and self:IsA("TeleportService") then
+                -- Chặn tất cả các hàm dịch chuyển / đổi server của TeleportService (Teleport, TeleportAsync, ...)
+                if typeof(self) == "Instance" and (self == TeleportService or self:IsA("TeleportService")) then
                     if not (state and state.isRejoining) then
-                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (__namecall)!")
+                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (__namecall: " .. tostring(method) .. ")!")
+                        return
+                    end
+                end
+                -- Chặn LocalPlayer:Kick từ Client
+                if method == "Kick" and typeof(self) == "Instance" and self:IsA("Player") then
+                    if not (state and state.isRejoining) then
+                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Kick!")
                         return
                     end
                 end
                 return oldNamecall(self, ...)
             end)
         end
-        if type(hookfunction) == "function" then
-            local oldTeleport
-            oldTeleport = hookfunction(TeleportService.Teleport, function(self, ...)
-                if not (state and state.isRejoining) then
-                    warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server!")
-                    return
-                end
-                return oldTeleport(self, ...)
-            end)
 
-            local oldTeleportToPlaceInstance
-            oldTeleportToPlaceInstance = hookfunction(TeleportService.TeleportToPlaceInstance, function(self, ...)
-                if not (state and state.isRejoining) then
-                    warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (Instance)!")
-                    return
-                end
-                return oldTeleportToPlaceInstance(self, ...)
+        if type(hookfunction) == "function" then
+            local tpMethods = { "Teleport", "TeleportAsync", "TeleportToPlaceInstance", "TeleportToPrivateServer", "TeleportToSpawnByName" }
+            for _, fnName in ipairs(tpMethods) do
+                pcall(function()
+                    if typeof(TeleportService[fnName]) == "function" then
+                        local oldFn
+                        oldFn = hookfunction(TeleportService[fnName], function(self, ...)
+                            if not (state and state.isRejoining) then
+                                warn("[Anti-AFK Block]: Đã chặn BigGames tự động Hop Server (" .. fnName .. ")!")
+                                return
+                            end
+                            return oldFn(self, ...)
+                        end)
+                    end
+                end)
+            end
+
+            pcall(function()
+                local oldKick
+                oldKick = hookfunction(LocalPlayer.Kick, function(self, ...)
+                    if not (state and state.isRejoining) then
+                        warn("[Anti-AFK Block]: Đã chặn BigGames tự động Kick!")
+                        return
+                    end
+                    return oldKick(self, ...)
+                end)
             end)
         end
     end)
 
-    -- 2. Vô hiệu hóa Idled Connection của Roblox (Chống kick 20')
+    -- 2. Đè Network.Fire: Luôn báo với Server là Client đang Active / Focus cửa sổ
+    pcall(function()
+        if type(G.Network) == "table" and type(G.Network.Fire) == "function" then
+            local origFire = G.Network.Fire
+            G.Network.Fire = function(name, ...)
+                if name == "Idle Tracking: Focus Changed" then
+                    return origFire(name, true)
+                end
+                return origFire(name, ...)
+            end
+        end
+    end)
+
+    -- 3. Vô hiệu hóa Idled Connection của Roblox (Chống kick 20')
     pcall(function()
         if type(getconnections) == "function" then
             for _, c in ipairs(getconnections(LocalPlayer.Idled)) do
@@ -520,42 +595,63 @@ local function installGodModeAntiAfk()
         end
     end)
 
-    table.insert(connections, LocalPlayer.Idled:Connect(function()
-        if not (state and state.alive) then return end
+    local function performAfkNudge()
         pcall(function()
+            -- Bắn Remote dập tắt idle timer trên server
+            netFire("Idle Tracking: Stop Timer")
+            netFire("Idle Tracking: Update Timer")
+            netFire("Idle Tracking: Focus Changed", true)
+
+            -- Nhảy nhẹ
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                hum.Jump = true
+            end
+
+            -- VirtualUser Click chuột phải
+            local cam = workspace.CurrentCamera
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new())
-            local cam = workspace.CurrentCamera
             VirtualUser:Button2Down(Vector2.new(0, 0), cam and cam.CFrame or CFrame.new())
             task.wait(0.05)
             VirtualUser:Button2Up(Vector2.new(0, 0), cam and cam.CFrame or CFrame.new())
+
+            -- VirtualInputManager chuột & phím
+            if VirtualInputManager then
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 1, true, game, 0)
+                    task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+                    task.wait(0.05)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+                end)
+            end
         end)
+    end
+
+    table.insert(connections, LocalPlayer.Idled:Connect(function()
+        if not (state and state.alive) then return end
+        performAfkNudge()
     end))
 
-    -- 3. Chu kỳ nhịp Anti-AFK God Mode chuẩn (180s = 3 phút theo đúng code gốc của dj)
+    -- 4. Bắt sự kiện khi cửa sổ mất Focus (Treo tab chạy ngầm 80 acc)
+    pcall(function()
+        if UserInputService then
+            table.insert(connections, UserInputService.WindowFocusReleased:Connect(function()
+                performAfkNudge()
+            end))
+        end
+    end)
+
+    -- 5. Chu kỳ nhịp Anti-AFK (35s/lần liên tục duy trì trạng thái hoạt động)
     task.spawn(function()
-        local interval = CFG.AfkPulseInterval or 180
+        local interval = CFG.AfkPulseInterval or 35
         while (state and state.alive) do
             task.wait(interval)
             if not (state and state.alive) then break end
-
-            pcall(function()
-                local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                    hum.Jump = true
-                end
-            end)
-
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-            end)
-
-            pcall(function()
-                netFire("Idle Tracking: Stop Timer")
-            end)
+            performAfkNudge()
         end
     end)
 end
@@ -1476,20 +1572,13 @@ local function checkAndRunCombine()
             task.wait(0.8)
         end
 
-        -- 1. Claim các mẻ đã ghép xong
+        -- 1. Claim các mẻ đã ghép xong (Để checkNewHugeHatched tự bắn webhook nổ Huge, tránh bị báo 2 lần)
         for _, claim in ipairs(readyClaims) do
             local okC, resC = netInvoke("HalloweenCraftingMachine_Claim", claim.UID)
             if okC and resC then
                 local recName = targetRecipeName
                 for _, r in ipairs(recipes) do if r.index == claim.RecipeIndex then recName = r.name end end
                 state.combineStatus = "Đã nhận " .. recName
-                -- Webhook chỉ báo khi nhận Huge và tên acc nhận Huge (không kèm time)
-                sendWebhook(
-                    "🎉 [NHẬN HUGE GHÉP THÀNH CÔNG] 🎉",
-                    string.format("👑 **Tài khoản:** `%s`\n🎉 **Pet nhận được:** **%s**", LocalPlayer.Name, recName),
-                    0xFFD700,
-                    CFG.Webhook.EventsUrl
-                )
             end
             task.wait(0.6)
         end
@@ -1630,7 +1719,11 @@ local function getPetPower(p)
 end
 
 local function checkAndRunDaycare()
-    if not CFG.AutoDaycare or state.excursion ~= nil then return end
+    if not CFG.AutoDaycare then
+        state.daycareStatus = "Đã tắt (Config)"
+        return
+    end
+    if state.excursion ~= nil then return end
 
     local now = os.clock()
     if now < state.nextDaycareCheckAt then return end
@@ -2367,7 +2460,7 @@ task.spawn(function()
 
     while (state and state.alive) do
         local sendSuccess = false
-        pcall(function()
+        local okLoop, errLoop = pcall(function()
             if not inEvent() or state.excursion ~= nil then task.wait(2) return end
 
             local now = os.clock()
@@ -2394,21 +2487,35 @@ task.spawn(function()
             state.excursion = "mail"
             state.mailStatus = "Đang gửi " .. huge.Name
 
-            netFire("Machines: Mark Approached", "Mailbox")
+            -- Kiểm tra số Gems tối thiểu trong ví để tránh request vô nghĩa khi không đủ tiền
+            local currentDiamonds = getDiamonds()
+            if currentDiamonds < 10000 then
+                state.excursion = nil
+                nextMailAttemptAt = os.clock() + MailConfig.RetryIntervalSec
+                state.mailStatus = string.format("Chờ gửi lại sau 30p (Thiếu Gems)")
+                task.wait(1)
+                return
+            end
+
+            pcall(function()
+                netFire("Machines: Mark Approached", "Mailbox")
+            end)
             task.wait(0.3)
 
             if huge.IsLocked then
-                netInvoke("Locking_SetLocked", huge.UID, false)
-                netFire("Pets_Unlock", huge.UID)
+                pcall(function()
+                    netInvoke("Locking_SetLocked", huge.UID, false)
+                    netFire("Pets_Unlock", huge.UID)
+                end)
                 task.wait(0.4)
             end
 
             local diaBefore = getDiamonds()
-            local okSend, resSend = netInvoke("Mailbox: Send", MailConfig.Recipient, "Gift #" .. tostring(math.random(100, 999)), "Pet", huge.UID, 1)
+            local okSend, resSend = netInvokeTimeout(6, "Mailbox: Send", MailConfig.Recipient, "Gift #" .. tostring(math.random(100, 999)), "Pet", huge.UID, 1)
             local diaAfter = getDiamonds()
             local actualCost = math.max(0, diaBefore - diaAfter)
 
-            state.excursion = nil -- Luôn trả quyền điều khiển về luồng chính ngay lập tức
+            state.excursion = nil -- Luôn giải phóng cờ excursion ngay lập tức
 
             if okSend and resSend == true then
                 sendSuccess = true
@@ -2421,14 +2528,19 @@ task.spawn(function()
                     state.mailStatus = "Pet không thể trade (Bỏ qua)"
                     task.wait(3)
                 else
-                    -- BẤT KỲ LỖI NÀO (CƯỚC CAO, THIẾU GEMS, HÒM ĐẦY, SERVER TỪ CHỐI):
-                    -- NGHỈ ĐÚNG 30 PHÚT RỒI MỚI THỬ LẠI! HOÀN TOÀN KHÔNG SPAM REQUEST!
+                    -- BẤT KỲ LỖI NÀO (CƯỚC CAO > 1M GEMS, THIẾU GEMS, HÒM ĐẦY, TIMEOUT, TỪ CHỐI):
+                    -- LẬP TỨC KHÓA ĐÚNG 30 PHÚT, ĐẾM LÙI THỜI GIAN THỰC, 0 REQUEST SPAM!
                     nextMailAttemptAt = os.clock() + MailConfig.RetryIntervalSec
-                    state.mailStatus = string.format("Gửi chưa được | Thử lại sau 30p")
+                    state.mailStatus = string.format("Chờ gửi lại sau 30p (30:00)")
                     task.wait(1)
                 end
             end
         end)
+        if not okLoop then
+            state.excursion = nil
+            nextMailAttemptAt = os.clock() + MailConfig.RetryIntervalSec
+            state.mailStatus = string.format("Chờ gửi lại sau 30p (30:00)")
+        end
         if sendSuccess then task.wait(MailConfig.MailCooldownSec) end
         task.wait(1)
     end
