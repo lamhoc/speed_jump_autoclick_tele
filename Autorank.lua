@@ -36,7 +36,7 @@ local Config = {
     },
 
     -- KizHub Blackout GUI & Performance
-    BlackoutGui = true,
+    BlackoutGui = false,
     Disable3DRendering = true,
     GuiToggleKey = Enum.KeyCode.RightControl,
 
