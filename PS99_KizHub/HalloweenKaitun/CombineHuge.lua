@@ -167,31 +167,65 @@ end
 
 -- Quét kiểm tra máy Combine-o-Matic đã có Combine Egg hay chưa (phát hiện server cũ)
 function CombineHuge.scanCombineEggAvailability()
-    local recipes, dir = CombineHuge.combineRecipes()
-    if not dir or #recipes == 0 then
-        return false, "Không tìm thấy dữ liệu máy Combine-o-Matic"
+    local dir = CombineHuge.combineDir()
+    if not dir then
+        local RS = game:GetService("ReplicatedStorage")
+        local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Directory") and RS.Library.Directory:FindFirstChild("HalloweenCraftingMachines")
+        if mod then
+            local ok, m = pcall(require, mod)
+            if ok and type(m) == "table" then
+                dir = m[K.COMBINE_ID] or m["HalloweenGamesCombine"] or m["Combine-o-Matic"] or next(m)
+            end
+        end
     end
 
-    for _, r in ipairs(recipes) do
-        local nl = r.name:lower()
+    if not dir or type(dir.Recipes) ~= "table" or #dir.Recipes == 0 then
+        return false, "Chưa nạp được dữ liệu máy Combine-o-Matic"
+    end
+
+    for _, r in ipairs(dir.Recipes) do
+        local rName = ""
+        if r.Result then
+            pcall(function()
+                if type(r.Result.GetId) == "function" then
+                    rName = tostring(r.Result:GetId() or "")
+                elseif r.Result.Id then
+                    rName = tostring(r.Result.Id)
+                elseif r.Result.Name then
+                    rName = tostring(r.Result.Name)
+                end
+            end)
+        end
+        local nl = rName:lower()
         if (nl:find("combine") and nl:find("egg")) or nl == "combine egg" then
-            return true, r
+            return true, rName
         end
     end
 
     local oldNames = {}
-    for _, r in ipairs(recipes) do
-        table.insert(oldNames, r.name)
+    for _, r in ipairs(dir.Recipes) do
+        if r.Result then
+            pcall(function()
+                local n = type(r.Result.GetId) == "function" and r.Result:GetId() or r.Result.Id or r.Result.Name or "?"
+                table.insert(oldNames, tostring(n))
+            end)
+        end
     end
-    local detail = #oldNames > 0 and table.concat(oldNames, ", ") or "Không rõ"
+    local detail = #oldNames > 0 and table.concat(oldNames, ", ") or "Chưa có công thức mới"
     return false, string.format("Server cũ: Chưa có Combine Egg (Đang có: %s)", detail)
 end
 
 -- Chức năng Server Hop tìm server mới đã cập nhật Combine Egg
 local isHoppingServer = false
+local lastHopAttempt = 0
+
 function CombineHuge.hopServer()
-    if isHoppingServer then return end
+    local now = os.clock()
+    if isHoppingServer and (now - lastHopAttempt < 15) then
+        return
+    end
     isHoppingServer = true
+    lastHopAttempt = now
 
     local loader = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/lamhoc/speed_jump_autoclick_tele/main/PS99_KizHub/HalloweenKaitun/main.lua"))()'
     if type(queue_on_teleport) == "function" then
@@ -202,40 +236,119 @@ function CombineHuge.hopServer()
         local TeleportService = game:GetService("TeleportService")
         local HttpService = game:GetService("HttpService")
         local placeId = game.PlaceId
-        local success = false
+        local candidateServers = {}
+        local cursor = ""
+        local reqFn = (type(request) == "function" and request)
+            or (type(http_request) == "function" and http_request)
+            or (type(http) == "table" and type(http.request) == "function" and http.request)
+            or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
 
-        pcall(function()
-            local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100", tostring(placeId))
-            local reqFn = (type(request) == "function" and request)
-                or (type(http_request) == "function" and http_request)
-                or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+        for page = 1, 3 do
+            local url = string.format(
+                "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100%s",
+                tostring(placeId),
+                (cursor ~= "" and ("&cursor=" .. cursor) or "")
+            )
             local body = nil
             if reqFn then
-                local res = reqFn({ Url = url, Method = "GET" })
-                if res and res.Body then body = res.Body end
-            elseif type(game.HttpGet) == "function" then
-                body = game:HttpGet(url)
-            end
-            if body then
-                local data = HttpService:JSONDecode(body)
-                if data and type(data.data) == "table" then
-                    for _, s in ipairs(data.data) do
-                        if s.id ~= game.JobId and (s.playing or 0) < (s.maxPlayers or 0) and (s.playing or 0) > 0 then
-                            TeleportService:TeleportToPlaceInstance(placeId, s.id, game:GetService("Players").LocalPlayer)
-                            success = true
-                            break
-                        end
-                    end
+                local ok, resp = pcall(reqFn, { Url = url, Method = "GET" })
+                if ok and type(resp) == "table" and resp.Body then
+                    body = resp.Body
                 end
             end
-        end)
+            if not body and type(game.HttpGet) == "function" then
+                local ok, res = pcall(game.HttpGet, game, url)
+                if ok and type(res) == "string" and #res > 0 then
+                    body = res
+                end
+            end
 
-        if not success then
-            pcall(function()
+            if body then
+                local okD, data = pcall(HttpService.JSONDecode, HttpService, body)
+                if okD and data and type(data.data) == "table" then
+                    for _, s in ipairs(data.data) do
+                        if type(s) == "table" and s.id and s.id ~= game.JobId then
+                            local pl = tonumber(s.playing) or 0
+                            local maxPl = tonumber(s.maxPlayers) or 20
+                            if pl >= 1 and pl <= (maxPl - 2) then
+                                table.insert(candidateServers, s.id)
+                            end
+                        end
+                    end
+                    if data.nextPageCursor and tostring(data.nextPageCursor) ~= "" and data.nextPageCursor ~= "null" then
+                        cursor = tostring(data.nextPageCursor)
+                    else
+                        break
+                    end
+                else
+                    break
+                end
+            else
+                break
+            end
+            task.wait(0.2)
+        end
+
+        if #candidateServers > 0 then
+            local chosen = candidateServers[math.random(1, math.min(#candidateServers, 10))]
+            print(string.format("[KizHub ServerHop] Đang dịch chuyển sang Server mới: %s...", tostring(chosen)))
+            local okTp, errTp = pcall(function()
+                TeleportService:TeleportToPlaceInstance(placeId, chosen, game:GetService("Players").LocalPlayer)
+            end)
+            if not okTp then
+                warn("[KizHub ServerHop] Lỗi TeleportToPlaceInstance: " .. tostring(errTp))
+                isHoppingServer = false
+            end
+        else
+            warn("[KizHub ServerHop] Không tìm thấy server từ API, gọi TeleportService...")
+            local okTp = pcall(function()
                 TeleportService:Teleport(placeId, game:GetService("Players").LocalPlayer)
             end)
+            if not okTp then
+                isHoppingServer = false
+            end
         end
     end)
+end
+
+-- Lắng nghe sự kiện nếu Teleport thất bại thì cho phép thử lại
+pcall(function()
+    local TeleportService = game:GetService("TeleportService")
+    TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+        warn(string.format("[KizHub ServerHop] Dịch chuyển thất bại (%s): %s. Đang thử server khác...", tostring(teleportResult), tostring(errorMessage)))
+        isHoppingServer = false
+        task.wait(2)
+        CombineHuge.hopServer()
+    end)
+end)
+
+-- Quét kiểm tra phiên bản server ngay khi load script
+function CombineHuge.checkServerVersionOnStartup(state)
+    if not Config.AutoHopIfOldServer then return end
+    task.wait(2.5)
+    for attempt = 1, 8 do
+        local hasEgg, statusMsg = CombineHuge.scanCombineEggAvailability()
+        if hasEgg then
+            print("[KizHub] ✔ Server hiện tại là Server MỚI (Đã có Combine Egg). Bắt đầu farm!")
+            if state then
+                state.serverHasCombineEgg = true
+                state.combineStatus = "Sẵn sàng (Đã có Combine Egg)"
+            end
+            return true
+        else
+            print(string.format("[KizHub] [Kiểm tra %d/8] %s", attempt, tostring(statusMsg)))
+            if statusMsg and statusMsg:find("Server cũ", 1, true) then
+                print("[KizHub] ⚠ XÁC NHẬN SERVER CŨ: Chưa có Combine Egg -> TỰ ĐỘNG SERVER HOP NGAY!")
+                if state then
+                    state.combineStatus = "⚠ Server cũ -> Đang chuyển server mới..."
+                end
+                task.wait(1.0)
+                CombineHuge.hopServer()
+                return false
+            end
+        end
+        task.wait(1.5)
+    end
 end
 
 function CombineHuge.activeQueues()

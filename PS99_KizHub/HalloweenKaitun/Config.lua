@@ -36,7 +36,7 @@ local Config = {
     -- [TỰ ĐỘNG ĐỔI SERVER NẾU GẶP SERVER CŨ CHƯA CÓ COMBINE EGG]:
     -- true: Tự động hop server tìm server mới hơn đã update Combine Egg
     -- false: Ở lại server hiện tại và hiển thị cảnh báo "Server cũ" trên GUI
-    AutoHopIfOldServer = false,
+    AutoHopIfOldServer = true,
 
     -- [BẬT / TẮT AUTO DAYCARE]: true = Bật, false = Tắt hoàn toàn
     AutoDaycare = false,
@@ -103,6 +103,13 @@ if Config.TargetCombineRecipe == "Huge Bat Hoodie Bunny" or Config.TargetCombine
     Config.TargetCombineRecipe = "Combine Egg"
     if type(genv.KaitunConfig) == "table" then
         genv.KaitunConfig.TargetCombineRecipe = "Combine Egg"
+    end
+end
+
+if Config.AutoHopIfOldServer == nil then
+    Config.AutoHopIfOldServer = true
+    if type(genv.KaitunConfig) == "table" then
+        genv.KaitunConfig.AutoHopIfOldServer = true
     end
 end
 
