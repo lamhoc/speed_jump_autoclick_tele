@@ -156,11 +156,6 @@ local state = {
     lastStatusHatched = nil,
 }
 
--- Quét kiểm tra phiên bản server ngay khi load script (Tự động Server Hop nếu server cũ chưa update Combine Egg)
-task.spawn(function()
-    CombineHuge.checkServerVersionOnStartup(state)
-end)
-
 local SCRIPT_START_TIME = os.clock()
 local function formatUptime()
     local elapsed = math.max(0, math.floor(os.clock() - SCRIPT_START_TIME))
@@ -295,6 +290,11 @@ CombineHuge.init(sharedDeps)
 Daycare.init(sharedDeps)
 AutoMail.init(sharedDeps)
 BuffsAndGifts.init(sharedDeps)
+
+-- Quét kiểm tra phiên bản server ngay khi hoàn tất init (Tự động Server Hop nếu server cũ chưa update Combine Egg)
+task.spawn(function()
+    CombineHuge.checkServerVersionOnStartup(state)
+end)
 
 -- 4. Kích hoạt tối ưu đồ họa, Anti-AFK & Bỏ animation nở trứng
 EngineOptim.applyAll(Config.TargetFPS or 5, true)

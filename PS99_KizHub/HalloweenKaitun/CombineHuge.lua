@@ -14,6 +14,13 @@ local K = nil
 local inEventFn = nil
 local instanceModelFn = nil
 
+local function getConfig()
+    if Config and type(Config) == "table" then return Config end
+    local genv = (type(getgenv) == "function" and getgenv()) or _G
+    if type(genv.KaitunConfig) == "table" then return genv.KaitunConfig end
+    return {}
+end
+
 function CombineHuge.init(deps)
     G = deps.Modules.G
     Net = deps.Network
@@ -324,7 +331,8 @@ end)
 
 -- Quét kiểm tra phiên bản server ngay khi load script
 function CombineHuge.checkServerVersionOnStartup(state)
-    if not Config.AutoHopIfOldServer then return end
+    local cfg = getConfig()
+    if not cfg.AutoHopIfOldServer then return end
     task.wait(2.5)
     for attempt = 1, 8 do
         local hasEgg, statusMsg = CombineHuge.scanCombineEggAvailability()
@@ -375,7 +383,8 @@ function CombineHuge.activeQueues()
 end
 
 function CombineHuge.checkAndRunCombine(state)
-    if not Config.AutoCombine or (inEventFn and not inEventFn()) or state.excursion ~= nil then return end
+    local cfg = getConfig()
+    if not cfg.AutoCombine or (inEventFn and not inEventFn()) or state.excursion ~= nil then return end
     local now = os.clock()
     if now < (state.nextCombineAt or 0) then return end
 
@@ -385,7 +394,7 @@ function CombineHuge.checkAndRunCombine(state)
         state.combineStatus = "⚠ " .. tostring(eggStatusMsg)
         state.serverHasCombineEgg = false
 
-        if Config.AutoHopIfOldServer then
+        if cfg.AutoHopIfOldServer then
             state.combineStatus = "⚠ Server cũ -> Đang chuyển server mới có Combine Egg..."
             task.wait(2.0)
             CombineHuge.hopServer()
@@ -393,7 +402,7 @@ function CombineHuge.checkAndRunCombine(state)
             return
         end
 
-        state.nextCombineAt = now + (Config.CombineCooldown or 30)
+        state.nextCombineAt = now + (cfg.CombineCooldown or 30)
         return
     end
 
