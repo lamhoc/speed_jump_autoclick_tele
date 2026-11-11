@@ -291,11 +291,6 @@ Daycare.init(sharedDeps)
 AutoMail.init(sharedDeps)
 BuffsAndGifts.init(sharedDeps)
 
--- Quét kiểm tra phiên bản server ngay khi hoàn tất init (Tự động Server Hop nếu server cũ chưa update Combine Egg)
-task.spawn(function()
-    CombineHuge.checkServerVersionOnStartup(state)
-end)
-
 -- 4. Kích hoạt tối ưu đồ họa, Anti-AFK & Bỏ animation nở trứng
 EngineOptim.applyAll(Config.TargetFPS or 5, true)
 AntiAFK.installGodModeAntiAfk(Network.netFire, Config.AfkPulseInterval or 35)

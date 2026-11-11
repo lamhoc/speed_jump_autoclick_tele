@@ -1,7 +1,8 @@
 -- =========================================================================
 -- PS99_KizHub/HalloweenKaitun/AutoMail.lua
 -- Module tự động gửi Huge Pet qua hòm thư Mailbox về tài khoản chính
--- Tích hợp: Bỏ qua Bat Hoodie Bunny, Khóa cước Gems, Chống spam 30p khi lỗi
+-- Tích hợp: Bỏ qua Titanic, Gargantuan, Untradable, Soulbound, Bat Hoodie Bunny
+--           Khóa cước Gems, Chống spam 30p khi lỗi
 -- =========================================================================
 
 local Players = game:GetService("Players")
@@ -48,7 +49,7 @@ function AutoMail.getDiamonds()
     return 0
 end
 
--- Quét tìm Huge pet có thể gửi (bỏ qua Huge Bat Hoodie Bunny)
+-- Quét tìm Huge pet có thể gửi (bỏ qua Titanic, Gargantuan, Untradable, Soulbound, Bat Hoodie Bunny)
 function AutoMail.findSendableHuge()
     local s = Net.getSave()
     local pets = s and s.Inventory and s.Inventory.Pet
@@ -56,19 +57,27 @@ function AutoMail.findSendableHuge()
 
     for uid, p in pairs(pets) do
         if type(p) == "table" and type(p.id) == "string" then
+            -- 1. Tuyệt đối KHÔNG gửi Titanic hay Gargantuan (giữ lại trên tài khoản)
+            if p.id:find("Titanic ") or p.id:find("Gargantuan ") then
+                continue
+            end
+
+            -- 2. Bỏ qua Huge Bat Hoodie Bunny & Combine event pets
+            if p.id:find("Bat Hoodie Bunny") or p.id:find("Combine") then
+                continue
+            end
+
+            -- 3. Bỏ qua nếu nằm trong blacklist tạm thời (lỗi trước đó)
+            if FailedUIDBlacklist[uid] then continue end
+
+            -- 4. Bỏ qua Soulbound / Untradable (Game cấm gửi thư)
+            if p.sb == true or p._sb == true or p.Soulbound == true or p.Untradable == true or p.tradable == false then
+                FailedUIDBlacklist[uid] = true
+                continue
+            end
+
             local isHuge = (p.IsHuge and p:IsHuge()) or (p.id:find("Huge ") and not p.id:find("Huge Hunter"))
             if isHuge then
-                -- Bỏ qua Huge Bat Hoodie Bunny (chưa hỗ trợ gửi thư tại event này)
-                if p.id:find("Bat Hoodie Bunny") then
-                    continue
-                end
-
-                if FailedUIDBlacklist[uid] then continue end
-                if p.sb == true or p._sb == true or p.Soulbound == true or p.Untradable == true then
-                    FailedUIDBlacklist[uid] = true
-                    continue
-                end
-
                 local pName = (p.sh and "Shiny " or "") .. (p.pt == 2 and "Rainbow " or p.pt == 1 and "Golden " or "") .. p.id
                 return {
                     UID = uid,
@@ -102,7 +111,7 @@ function AutoMail.stepMailTick(state)
     -- 2. Tìm Huge cần gửi
     local huge = AutoMail.findSendableHuge()
     if not huge then
-        state.mailStatus = "Hết Huge (Bỏ qua Bunny)"
+        state.mailStatus = "Hết Huge hợp lệ"
         return
     end
 
