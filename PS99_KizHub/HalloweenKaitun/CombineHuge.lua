@@ -65,6 +65,33 @@ function CombineHuge.combineDir()
 end
 
 function CombineHuge.ingredientNeed(dir, ing)
+    local cfg = getConfig()
+    local rawId = ""
+    if ing.Item then
+        pcall(function()
+            if type(ing.Item.GetId) == "function" then
+                rawId = tostring(ing.Item:GetId() or "")
+            elseif ing.Item.Id then
+                rawId = tostring(ing.Item.Id)
+            else
+                rawId = tostring(ing.Item)
+            end
+        end)
+    end
+
+    local isShard = rawId:find("Shard") or (ing.AmountFFlag and tostring(ing.AmountFFlag):find("Shard"))
+    local isAgony = rawId:find("Agony") or (ing.AmountFFlag and tostring(ing.AmountFFlag):find("Agony"))
+
+    local targetAgony = (cfg.CombineIngredients and cfg.CombineIngredients.Agony) or 10
+    local targetShard = (cfg.CombineIngredients and cfg.CombineIngredients.Shard) or 300
+
+    -- Công thức chuẩn Combine Egg: 10 Masquerade Agony & 300 Shards
+    if isShard then
+        return targetShard
+    elseif isAgony then
+        return targetAgony
+    end
+
     local amount = tonumber(CombineHuge.flagValue(ing.AmountFFlag)) or tonumber(ing.Amount) or 1
     local need = math.max(1, math.ceil(amount))
     if not ing.NoDiscount and type(dir.IngredientAmount) == "function" then
@@ -189,7 +216,18 @@ function CombineHuge.getCombineStatusText()
         if target.ready then
             return "Sẵn sàng mở (" .. target.summary .. ")"
         elseif target.missing and target.missing ~= "" then
-            return "Thiếu: " .. target.missing
+            local readyParts = {}
+            for item in string.gmatch(target.summary or "", "[^,]+") do
+                local trimmed = item:gsub("^%s*(.-)%s*$", "%1")
+                if trimmed ~= "" and not target.missing:find(trimmed, 1, true) then
+                    table.insert(readyParts, trimmed)
+                end
+            end
+            if #readyParts > 0 then
+                return string.format("Thiếu: %s (Đủ %s)", target.missing, table.concat(readyParts, ", "))
+            else
+                return "Thiếu: " .. target.missing
+            end
         elseif target.summary and target.summary ~= "" then
             return "Thiếu: " .. target.summary
         end

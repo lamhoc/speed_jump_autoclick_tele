@@ -33,6 +33,12 @@ local Config = {
     TargetCombineRecipe = "Combine Egg",
     CombineCooldown = 30,
 
+    -- [CÔNG THỨC COMBINE EGG CHUẨN]: 10 Masquerade Agony & 300 Shards
+    CombineIngredients = {
+        Agony = 10,
+        Shard = 300,
+    },
+
     -- [BẬT / TẮT AUTO DAYCARE]: true = Bật, false = Tắt hoàn toàn
     AutoDaycare = false,
 
