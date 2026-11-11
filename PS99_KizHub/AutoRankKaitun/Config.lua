@@ -27,10 +27,10 @@ local Config = {
     -- 5 Tính Năng Bổ Trợ Đặc Tả (Mới tích hợp)
     AutoTapBreakables = true,     -- [1. Auto Click]: Click phá bãi farm 10Hz song song cùng pet
     AutoTapDelay = 0.1,           -- Độ trễ nhịp tap (0.1s = 10Hz)
-    MaxPetSpeed = true,           -- [2. Infinite Pet Speed]: Hook CalculateSpeedMultiplier x10 cực đại
-    AutoCollectOrbs = true,       -- [3. Orb Collector]: Tự động quét và hút sạch ngọc rơi mỗi 0.8s
-    OrbCollectInterval = 0.8,
-    DisableEggAnimation = true,   -- [4. Skip Egg Animation]: Bỏ qua cutscene ấp trứng
+    MaxPetSpeed = true,           -- [2. Infinite Pet Speed]: Hook CalculateSpeedMultiplier math.huge di chuyển tức thì
+    AutoCollectOrbs = true,       -- [3. Orb Collector]: Hút sạch hạt rơi và lootbag vật lý mỗi 0.35s
+    OrbCollectInterval = 0.35,
+    DisableEggAnimation = true,   -- [4. Skip Egg Animation]: Triệt tiêu toàn bộ cutscene ấp trứng
     AutoBuffs = {                 -- [5. Auto Buffs]: Tự động duy trì trạng thái buff kho đồ
         Enabled = true,
         Fruits = true,            -- Tự ăn hoa quả gom nhóm tối đa 20 quả/đợt
@@ -39,6 +39,12 @@ local Config = {
         PotionInterval = 90,
         Toys = true,              -- Tự chơi Đồ chơi (Toy Ball, Toy Bone, Squeaky Toy)
         ToyInterval = 180,
+    },
+
+    -- [TÍNH NĂNG MỚI: MỞ EGG 3 PHÚT Ở MAP MỚI & TÍCH COIN CHỜ MAP TIẾP]
+    NewZoneHatch = {
+        Enabled = true,
+        Duration = 180,           -- 3 phút (180 giây) mở trứng tại map mới, sau đó chuyển sang cày tích coin
     },
 
     -- Tự động hóa tài khoản mới & Nâng cấp

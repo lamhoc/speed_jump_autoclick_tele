@@ -14,6 +14,9 @@ local Net = nil
 local Config = nil
 local CurrentWorldFn = nil
 
+-- Cờ bảo vệ chống gọi lặp vĩnh viễn
+local StarterDone = false
+
 function Progression.init(deps)
     G = deps.Modules.G
     Net = deps.Network
@@ -21,29 +24,32 @@ function Progression.init(deps)
     CurrentWorldFn = deps.CurrentWorld
 end
 
--- 1. Tự động chọn 2 Starter Pet cho tài khoản mới
+-- 1. Tự động chọn 2 Starter Pet cho tài khoản mới (Chạy 1 lần duy nhất rồi tắt vĩnh viễn)
 function Progression.autoPickStarterPets(state)
-    if not Config.AutoPickStarterPets then return end
-    if state.StarterPetsPicked then return end
+    if StarterDone or (state and state.StarterPetsPicked) then
+        return true
+    end
+    if Config.AutoPickStarterPets == false then
+        StarterDone = true
+        if state then state.StarterPetsPicked = true end
+        return true
+    end
 
-    local now = os.clock()
-    if now - (state.LastStarterPetCheckAt or 0) < 5 then return end
-    state.LastStarterPetCheckAt = now
-
-    -- Kiểm tra save inventory
+    -- 1.1 Kiểm tra save inventory: Chỉ cần có >= 1 pet là tài khoản đã có starter pet
     local save = Net.getSave()
     if save and save.Inventory and type(save.Inventory.Pet) == "table" then
         local petCount = 0
         for _ in pairs(save.Inventory.Pet) do
             petCount = petCount + 1
-            if petCount >= 2 then
-                state.StarterPetsPicked = true
-                return
+            if petCount >= 1 then
+                StarterDone = true
+                if state then state.StarterPetsPicked = true end
+                return true
             end
         end
     end
 
-    -- Gọi RemoteFunction Network chọn starter pets (Thuần Invoke, tuyệt đối không dùng FireServer)
+    -- 1.2 Gọi RemoteFunction Network chọn starter pets (Thuần Invoke bọc pcall, tuyệt đối không dùng FireServer)
     local candidatePairs = {
         { "Cat", "Dog" },
         { "Dog", "Cat" },
@@ -51,13 +57,13 @@ function Progression.autoPickStarterPets(state)
         { 1, 2 },
     }
     for _, pair in ipairs(candidatePairs) do
-        local ok1 = pcall(function() Net.netInvoke("Pick Starter Pets", pair[1], pair[2]) end)
-        if ok1 then break end
-        local ok2 = pcall(function() Net.netInvoke("Pick Starter Pets", pair) end)
-        if ok2 then break end
+        local ok, res = pcall(function() return Net.netInvoke("Pick Starter Pets", pair[1], pair[2]) end)
+        if ok and res ~= nil then break end
+        local ok2, res2 = pcall(function() return Net.netInvoke("Pick Starter Pets", pair) end)
+        if ok2 and res2 ~= nil then break end
     end
 
-    -- Quét PlayerGui nếu có bảng chọn pet giao diện
+    -- 1.3 Quét PlayerGui nếu có bảng chọn pet giao diện trên màn hình
     pcall(function()
         local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
         if not pgui then return end
@@ -117,13 +123,27 @@ function Progression.autoPickStarterPets(state)
     if saveAfter and saveAfter.Inventory and type(saveAfter.Inventory.Pet) == "table" then
         local count = 0
         for _ in pairs(saveAfter.Inventory.Pet) do count = count + 1 end
-        if count >= 2 then
-            state.StarterPetsPicked = true
+        if count >= 1 then
+            StarterDone = true
+            if state then state.StarterPetsPicked = true end
             if Net.isfn(G.PetCmds, "EquipBest") then
                 pcall(G.PetCmds.EquipBest)
             end
+            return true
         end
     end
+
+    if state then
+        state.StarterPetAttempts = (state.StarterPetAttempts or 0) + 1
+        if state.StarterPetAttempts >= 3 then
+            -- Sau 3 lần thử bất kể kết quả gì, khóa vĩnh viễn để tránh spam request gây lỗi
+            StarterDone = true
+            state.StarterPetsPicked = true
+            return true
+        end
+    end
+
+    return false
 end
 
 -- 2. Tự động mở Slot Pet và Slot Mở Trứng bằng Diamonds

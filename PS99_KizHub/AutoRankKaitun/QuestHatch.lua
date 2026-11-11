@@ -41,18 +41,54 @@ function QuestHatch.installNoEggAnimation()
     if isEggAnimHooked then return end
     task.spawn(function()
         for attempt = 1, 30 do
-            local ok, hooked = pcall(function()
+            local hookedAny = false
+
+            -- 4.1 Hook LocalScript "Egg Opening Frontend" trong PlayerScripts
+            pcall(function()
+                local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+                local eggScript = ps and ps:FindFirstChild("Egg Opening Frontend", true)
+                if eggScript and type(getsenv) == "function" then
+                    local env = getsenv(eggScript)
+                    if type(env) == "table" and type(env.PlayEggAnimation) == "function" then
+                        if type(hookfunction) == "function" then
+                            hookfunction(env.PlayEggAnimation, function(...) return end)
+                        end
+                        env.PlayEggAnimation = function(...) return end
+                        hookedAny = true
+                    end
+                end
+            end)
+
+            -- 4.2 Disable RemoteEvent OnClientEvent của "Eggs_PlayOpenAnimation"
+            pcall(function()
+                local RS = game:GetService("ReplicatedStorage")
+                local netFolder = RS:FindFirstChild("Network")
+                local remote = netFolder and netFolder:FindFirstChild("Eggs_PlayOpenAnimation")
+                if remote and type(getconnections) == "function" then
+                    for _, conn in ipairs(getconnections(remote.OnClientEvent)) do
+                        pcall(function() conn:Disable() end)
+                        hookedAny = true
+                    end
+                end
+            end)
+
+            -- 4.3 Hook fallback trên ModuleScript EggCmds nếu có
+            pcall(function()
                 local RS = game:GetService("ReplicatedStorage")
                 local eggCmds = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("EggCmds")
-                if not eggCmds or type(getsenv) ~= "function" then return false end
-                local env = getsenv(eggCmds)
-                if type(env) == "table" and type(env.PlayEggAnimation) == "function" then
-                    env.PlayEggAnimation = function() return end
-                    return true
+                if eggCmds and type(getsenv) == "function" then
+                    local env = getsenv(eggCmds)
+                    if type(env) == "table" and type(env.PlayEggAnimation) == "function" then
+                        if type(hookfunction) == "function" then
+                            hookfunction(env.PlayEggAnimation, function(...) return end)
+                        end
+                        env.PlayEggAnimation = function(...) return end
+                        hookedAny = true
+                    end
                 end
-                return false
             end)
-            if ok and hooked == true then
+
+            if hookedAny then
                 isEggAnimHooked = true
                 break
             end

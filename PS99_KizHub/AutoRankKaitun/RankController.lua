@@ -334,6 +334,35 @@ function RankController.BuildPlan(state)
         end
     end
 
+    -- Logic NewZoneHatch: Khi đi đến map mới, tự động mở egg tại map đó 3 phút, sau đó tích coin đợi mở map tiếp theo
+    local currentZoneId = BestZoneIdFn and BestZoneIdFn() or nil
+    local nzCfg = Config.NewZoneHatch
+    if nzCfg and nzCfg.Enabled ~= false and currentZoneId and type(currentZoneId) == "string" then
+        state.ZoneHatchDone = state.ZoneHatchDone or {}
+        if not state.ZoneHatchDone[currentZoneId] then
+            if not state.NewZoneHatchSession or state.NewZoneHatchSession.ZoneId ~= currentZoneId then
+                state.NewZoneHatchSession = {
+                    ZoneId = currentZoneId,
+                    StartedAt = os.clock(),
+                    Duration = tonumber(nzCfg.Duration) or 180,
+                }
+            end
+
+            local elapsed = os.clock() - state.NewZoneHatchSession.StartedAt
+            local remainingSec = math.max(0, math.ceil(state.NewZoneHatchSession.Duration - elapsed))
+            if remainingSec > 0 then
+                Plan.Hatch = true
+                Plan.HatchEggOnly = true
+                Plan.NewZoneSession = true
+                table.insert(Plan.HatchReasons, string.format("New Zone Egg (%ds left)", remainingSec))
+                parts[#parts + 1] = string.format("Hatching New Zone %s (%ds)", currentZoneId, remainingSec)
+            else
+                state.ZoneHatchDone[currentZoneId] = true
+                state.NewZoneHatchSession = nil
+            end
+        end
+    end
+
     state.Plan = Plan
     state.Action = #parts > 0 and table.concat(parts, " | ") or "idle"
 end

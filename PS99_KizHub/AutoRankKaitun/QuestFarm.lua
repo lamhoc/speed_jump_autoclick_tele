@@ -253,6 +253,13 @@ function QuestFarm.TargetPets(assignments, state)
 
     local updated = false
     for _, pet in pairs(Net.gval(G.PlayerPet.GetByPlayer, LocalPlayer) or {}) do
+        if Config.MaxPetSpeed ~= false and pet.owner == LocalPlayer then
+            pcall(function()
+                if type(pet.SetSpeed) == "function" then pet:SetSpeed(math.huge) end
+                if pet.speedMultiplier ~= nil then pet.speedMultiplier = math.huge end
+                if pet.speed ~= nil then pet.speed = math.huge end
+            end)
+        end
         local model = targets[assignments[pet.euid]]
         if state.Enabled and model and pet.owner == LocalPlayer and pet.target ~= model then
             local ok = Net.gcall(pet.SetTarget, pet, model)
@@ -384,17 +391,30 @@ function QuestFarm.installMaxPetSpeed(state)
         for attempt = 1, 30 do
             local hooked = false
             pcall(function()
-                local PlayerPet = G.PlayerPet or (G.require and G.require("PlayerPet"))
+                local PlayerPet = G.PlayerPet or (G.require and G.require("Library.Client.PlayerPet"))
                 if type(PlayerPet) == "table" and type(PlayerPet.CalculateSpeedMultiplier) == "function" then
-                    local orig = PlayerPet.CalculateSpeedMultiplier
-                    PlayerPet.CalculateSpeedMultiplier = function(self, ...)
-                        if state and state.Alive and state.Enabled then
-                            return 10 -- Hệ số tốc độ x10 cực đại giúp pet bay tức thì giữa các quặng
+                    if type(hookfunction) == "function" then
+                        local orig
+                        orig = hookfunction(PlayerPet.CalculateSpeedMultiplier, function(...)
+                            if state and state.Alive and state.Enabled then
+                                return math.huge -- Tốc độ cực đại math.huge giúp pet di chuyển tức thì
+                            end
+                            if type(orig) == "function" then return orig(...) end
+                            return 1
+                        end)
+                        hooked = true
+                        isPetSpeedHooked = true
+                    else
+                        local orig = PlayerPet.CalculateSpeedMultiplier
+                        PlayerPet.CalculateSpeedMultiplier = function(...)
+                            if state and state.Alive and state.Enabled then
+                                return math.huge
+                            end
+                            return orig(...)
                         end
-                        return orig(self, ...)
+                        hooked = true
+                        isPetSpeedHooked = true
                     end
-                    hooked = true
-                    isPetSpeedHooked = true
                 end
             end)
             if hooked then break end
@@ -403,7 +423,7 @@ function QuestFarm.installMaxPetSpeed(state)
     end)
 end
 
--- ================= 3. ORB COLLECTOR (TỰ ĐỘNG HÚT NGỌC/ORBS) =================
+-- ================= 3. ORB COLLECTOR (TỰ ĐỘNG HÚT NGỌC/ORBS/LOOTBAGS) =================
 local orbMapCache = nil
 function QuestFarm.findOrbMap()
     if type(orbMapCache) == "table" then return orbMapCache end
@@ -434,18 +454,76 @@ end
 
 function QuestFarm.CollectOrbsTick(state)
     if not state or not state.Alive or not state.Enabled then return end
-    local map = QuestFarm.findOrbMap()
-    if type(map) == "table" then
-        local now = workspace:GetServerTimeNow()
-        for _, orb in pairs(map) do
-            if type(orb) == "table" and not orb._collected and not orb._destroyed and type(orb.Collect) == "function" then
-                local age = now - (tonumber(orb._timestamp) or now)
-                if age >= (tonumber(orb._pickupDelay) or 0) then
-                    pcall(orb.Collect, orb, nil, nil, true)
+
+    -- 1. Hút Orbs & Lootbags vật lý trực tiếp trong workspace.__THINGS về nhân vật
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local hrpCf = hrp.CFrame
+        local things = workspace:FindFirstChild("__THINGS")
+        if not things then return end
+
+        local orbsFolder = things:FindFirstChild("Orbs")
+        if orbsFolder then
+            for _, orb in ipairs(orbsFolder:GetChildren()) do
+                pcall(function()
+                    if orb:IsA("BasePart") then
+                        orb.CFrame = hrpCf
+                        if type(firetouchinterest) == "function" then
+                            firetouchinterest(hrp, orb, 0)
+                            firetouchinterest(hrp, orb, 1)
+                        end
+                    elseif orb:IsA("Model") then
+                        orb:PivotTo(hrpCf)
+                        local pp = orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart")
+                        if pp and type(firetouchinterest) == "function" then
+                            firetouchinterest(hrp, pp, 0)
+                            firetouchinterest(hrp, pp, 1)
+                        end
+                    end
+                end)
+            end
+        end
+
+        local lootbagsFolder = things:FindFirstChild("Lootbags")
+        if lootbagsFolder then
+            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
+                pcall(function()
+                    if bag:IsA("BasePart") then
+                        bag.CFrame = hrpCf
+                        if type(firetouchinterest) == "function" then
+                            firetouchinterest(hrp, bag, 0)
+                            firetouchinterest(hrp, bag, 1)
+                        end
+                    elseif bag:IsA("Model") then
+                        bag:PivotTo(hrpCf)
+                        local pp = bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart")
+                        if pp and type(firetouchinterest) == "function" then
+                            firetouchinterest(hrp, pp, 0)
+                            firetouchinterest(hrp, pp, 1)
+                        end
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- 2. Kích hoạt logic thu thập client-side của OrbCmds nếu có
+    pcall(function()
+        local map = QuestFarm.findOrbMap()
+        if type(map) == "table" then
+            local now = workspace:GetServerTimeNow()
+            for _, orb in pairs(map) do
+                if type(orb) == "table" and not orb._collected and not orb._destroyed and type(orb.Collect) == "function" then
+                    local age = now - (tonumber(orb._timestamp) or now)
+                    if age >= (tonumber(orb._pickupDelay) or 0) then
+                        pcall(orb.Collect, orb, nil, nil, true)
+                    end
                 end
             end
         end
-    end
+    end)
 end
 
 return QuestFarm

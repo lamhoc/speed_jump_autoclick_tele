@@ -303,10 +303,22 @@ local function StartThreads()
         QuestItems.EventTick(State)
     end, function() return Config.EventTick or 3.0 end)
 
-    -- Tự chọn starter pets cho acc mới (5.0s đến khi xong)
-    SpawnLoop("starter pets", function()
-        Progression.autoPickStarterPets(State)
-    end, function() return State.StarterPetsPicked and 9999 or 5 end)
+    -- Tự chọn starter pets cho acc mới: Chạy luồng độc lập, khi xong hoặc acc đã có pet là HỦY LUỒNG VĨNH VIỄN
+    task.spawn(function()
+        for attempt = 1, 10 do
+            if not State.Alive or State.StarterPetsPicked then break end
+            local done = false
+            pcall(function()
+                done = Progression.autoPickStarterPets(State)
+            end)
+            if done or State.StarterPetsPicked then
+                State.StarterPetsPicked = true
+                break
+            end
+            task.wait(2.5)
+        end
+        State.StarterPetsPicked = true
+    end)
 
     -- Tự mở Slot Pet và Slot Trứng bằng Diamonds (15.0s)
     SpawnLoop("open slots", function()
@@ -331,16 +343,16 @@ local function StartThreads()
         end, function() return Config.AutoTapDelay or 0.1 end)
     end
 
-    -- [2. Infinite / Max Pet Speed]: Hook CalculateSpeedMultiplier x10 cực đại
+    -- [2. Infinite / Max Pet Speed]: Hook CalculateSpeedMultiplier math.huge
     if Config.MaxPetSpeed ~= false then
         pcall(function() QuestFarm.installMaxPetSpeed(State) end)
     end
 
-    -- [3. Orb Collector]: Tự động quét và hút sạch ngọc rơi (0.8s)
+    -- [3. Orb Collector]: Tự động quét và hút sạch ngọc & lootbags rơi (0.35s)
     if Config.AutoCollectOrbs ~= false then
         SpawnLoop("collect orbs", function()
             QuestFarm.CollectOrbsTick(State)
-        end, function() return Config.OrbCollectInterval or 0.8 end)
+        end, function() return Config.OrbCollectInterval or 0.35 end)
     end
 
     -- [4. Disable Egg Animation]: Bỏ qua cutscene ấp trứng
@@ -392,7 +404,6 @@ local function installBreakableFastPath()
 end
 
 installBreakableFastPath()
-pcall(function() Progression.autoPickStarterPets(State) end)
 StartThreads()
 
 print("[KizHub] AutoRank World 1 Modular System Initialized Successfully!")
