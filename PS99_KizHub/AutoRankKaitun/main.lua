@@ -33,12 +33,40 @@ local function import(path)
         end
     end
 
-    -- Fallback: Tự động tải từ GitHub Raw nếu máy/VPS không có sẵn file local
-    if not content and type(game.HttpGet) == "function" then
+    -- Fallback: Tự động tải từ GitHub Raw nếu máy/VPS/Mobile (Delta) chưa có sẵn file local
+    if not content then
         local remoteUrl = GITHUB_REPO_BASE .. cleanPath
-        local ok, data = pcall(game.HttpGet, game, remoteUrl)
-        if ok and type(data) == "string" and #data > 0 then
-            content = data
+        if type(game.HttpGet) == "function" then
+            local ok, data = pcall(game.HttpGet, game, remoteUrl)
+            if ok and type(data) == "string" and #data > 0 then
+                content = data
+            end
+        end
+        if not content then
+            local reqFn = (type(request) == "function" and request)
+                or (type(http_request) == "function" and http_request)
+                or (type(http) == "table" and type(http.request) == "function" and http.request)
+                or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+            if reqFn then
+                local ok, resp = pcall(reqFn, { Url = remoteUrl, Method = "GET" })
+                if ok and type(resp) == "table" and type(resp.Body) == "string" and #resp.Body > 0 then
+                    content = resp.Body
+                end
+            end
+        end
+
+        -- Tự động lưu cache cục bộ trên Mobile (Delta) để các lần sau nạp tức thì từ bộ nhớ máy
+        if content and type(writefile) == "function" and type(makefolder) == "function" then
+            pcall(function()
+                local isf = (type(isfolder) == "function" and isfolder) or function() return false end
+                if not isf("PS99_KizHub") then makefolder("PS99_KizHub") end
+                local parts = cleanPath:split("/")
+                if #parts > 1 then
+                    local sub = "PS99_KizHub/" .. parts[1]
+                    if not isf(sub) then makefolder(sub) end
+                end
+                writefile("PS99_KizHub/" .. cleanPath, content)
+            end)
         end
     end
 

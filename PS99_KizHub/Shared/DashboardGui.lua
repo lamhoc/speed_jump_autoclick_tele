@@ -254,13 +254,32 @@ function DashboardGui.create(config)
     DetailBox.ZIndex = 2
     uiElements.DetailBox = DetailBox
 
-    -- Lắng nghe phím RightControl để ẩn/hiện GUI
+    -- Lắng nghe phím RightControl (PC) & Tạo nút bấm cảm ứng (Mobile Delta)
     if UserInputService then
         UserInputService.InputBegan:Connect(function(input, processed)
             if not processed and input.KeyCode == toggleKey then
                 DashboardGui.toggleBlackout()
             end
         end)
+
+        if UserInputService.TouchEnabled then
+            local MobileBtn = Instance.new("TextButton", ScreenGui)
+            MobileBtn.Name = "KizHubMobileToggle"
+            MobileBtn.Text = "KIZHUB"
+            MobileBtn.Font = Enum.Font.GothamBold
+            MobileBtn.TextSize = 10
+            MobileBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            MobileBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+            MobileBtn.Position = UDim2.new(0, 10, 0, 10)
+            MobileBtn.Size = UDim2.new(0, 65, 0, 26)
+            MobileBtn.ZIndex = 10
+            MobileBtn.Active = true
+            MobileBtn.Draggable = true
+            Instance.new("UICorner", MobileBtn).CornerRadius = UDim.new(0, 8)
+            MobileBtn.Activated:Connect(function()
+                DashboardGui.toggleBlackout()
+            end)
+        end
     end
 
     if enableBlackout then
