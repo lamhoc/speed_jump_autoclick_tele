@@ -251,18 +251,27 @@ local function updateRankGui()
             ui.DaycareLabel.Text = (rNum >= targetRank) and "👑 ĐẠT RANK 11!" or string.format("Mục tiêu: Rank %d (Còn %d)", targetRank, math.max(0, targetRank - rNum))
         end
         if ui.CoinsLabel then
-            ui.CoinsLabel.Text = string.format("Trứng: %s | Craft: %s", Net.int(State.Counters.Hatched or 0), Net.int(State.Counters.Crafted or 0))
+            local coins = Net.currency("Coins")
+            local diamonds = Net.currency("Diamonds")
+            ui.CoinsLabel.Text = string.format("%s Coins | %s Gems", Net.shorten(coins), Net.shorten(diamonds))
         end
         if ui.TreatsLabel then
-            ui.TreatsLabel.Text = string.format("Quà nhận: %s | Items: %s", Net.int(State.Counters.Claimed or 0), Net.int(State.Counters.ItemsUsed or 0))
+            ui.TreatsLabel.Text = string.format("Trứng: %s | Quà: %s | Craft: %s", Net.shorten(State.Counters.Hatched or 0), Net.shorten(State.Counters.Claimed or 0), Net.shorten(State.Counters.Crafted or 0))
         end
         if ui.DetailBox then
             local lines = {}
             lines[#lines + 1] = "HÀNH ĐỘNG: " .. tostring(State.Action or "Đang farm...")
             lines[#lines + 1] = "----------------------------------------"
-            for i, goal in ipairs(State.Goals or {}) do
-                if i <= 4 then
-                    lines[#lines + 1] = string.format("• [%d★] %s", goal.Stars or 0, tostring(goal.title or ""))
+            local goals = State.Goals or {}
+            if #goals == 0 then
+                lines[#lines + 1] = "• Đang quét dữ liệu nhiệm vụ Rank..."
+            else
+                for i, goal in ipairs(goals) do
+                    if i <= 5 then
+                        local prog = Net.int(goal.Progress or 0)
+                        local target = Net.int(goal.Amount or 0)
+                        lines[#lines + 1] = string.format("• [%d★] %s (%s/%s)", goal.Stars or 0, tostring(goal.title or ("Goal " .. tostring(goal.Type))), prog, target)
+                    end
                 end
             end
             ui.DetailBox.Text = table.concat(lines, "\n")

@@ -35,6 +35,8 @@ function QuestFarm.init(deps)
     Net = deps.Network
     Config = deps.Config
     RankData = deps.RankData
+
+    pcall(QuestFarm.installOrbHook)
 end
 
 function QuestFarm.CurrentWorld()
@@ -370,16 +372,44 @@ end
 
 function QuestFarm.AutoTapTick(state)
     if not state or not state.Alive or not state.Enabled then return end
+    local folder = QuestFarm.BreakablesFolder()
+    if not folder then return end
+
+    local hrp = Net.hrp()
+    local myPos = hrp and hrp.Position or nil
     local zoneId = QuestFarm.BestZoneId()
-    if not zoneId then return end
 
-    local p1, p2, p3 = QuestFarm.CollectBreakables(zoneId)
-    local target = (#p1 > 0 and p1[math.random(1, #p1)])
-        or (#p2 > 0 and p2[math.random(1, #p2)])
-        or (#p3 > 0 and p3[math.random(1, #p3)])
+    local candidates = {}
+    for _, m in ipairs(folder:GetChildren()) do
+        if m:IsA("Model") and IsPublicBreakable(m) then
+            local uid = m:GetAttribute("BreakableUID")
+            if uid ~= nil then
+                local inRange = false
+                if myPos then
+                    local ok, pos = pcall(function() return m:GetPivot().Position end)
+                    if ok and (pos - myPos).Magnitude <= 95 then
+                        inRange = true
+                    end
+                end
+                if not inRange and zoneId then
+                    local pid = m:GetAttribute("ParentID")
+                    local aid = m:GetAttribute("AreaID")
+                    if pid == zoneId or aid == zoneId then
+                        inRange = true
+                    end
+                end
+                if inRange then
+                    candidates[#candidates + 1] = uid
+                end
+            end
+        end
+    end
 
-    if target then
-        Net.netUnreliable("Breakables_PlayerDealDamage", target)
+    if #candidates > 0 then
+        -- Chọn ngẫu nhiên 1 quặng bất kỳ trong bãi farm để nã sát thương
+        local targetUid = candidates[math.random(1, #candidates)]
+        Net.netUnreliable("Breakables_PlayerDealDamage", targetUid)
+        pcall(function() Net.netFire("Breakables_PlayerDealDamage", targetUid) end)
     end
 end
 
@@ -424,31 +454,64 @@ function QuestFarm.installMaxPetSpeed(state)
 end
 
 -- ================= 3. ORB COLLECTOR (TỰ ĐỘNG HÚT NGỌC/ORBS/LOOTBAGS) =================
+local isOrbHooked = false
+function QuestFarm.installOrbHook()
+    if isOrbHooked then return end
+    task.spawn(function()
+        for attempt = 1, 30 do
+            local hooked = false
+            pcall(function()
+                local RS = game:GetService("ReplicatedStorage")
+                local orbModule = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds") and RS.Library.Client.OrbCmds:FindFirstChild("Orb")
+                if orbModule then
+                    local Orb = require(orbModule)
+                    if type(Orb) == "table" and type(Orb.new) == "function" then
+                        local origNew = Orb.new
+                        Orb.new = function(...)
+                            local orb = origNew(...)
+                            if type(orb) == "table" then
+                                task.defer(function()
+                                    task.wait(tonumber(orb._pickupDelay) or 0.1)
+                                    pcall(orb.Collect, orb, nil, nil, true)
+                                end)
+                            end
+                            return orb
+                        end
+                        hooked = true
+                        isOrbHooked = true
+                    end
+                end
+            end)
+            if hooked then break end
+            task.wait(1.0)
+        end
+    end)
+end
+
 local orbMapCache = nil
 function QuestFarm.findOrbMap()
     if type(orbMapCache) == "table" then return orbMapCache end
-    local RS = game:GetService("ReplicatedStorage")
-    local ok, map = pcall(function()
-        local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds")
-        if not mod or type(getsenv) ~= "function" then return nil end
-        local env = getsenv(mod)
-        local fn = type(env) == "table" and env.ProcessCreate or nil
-        if type(fn) ~= "function" and type(getgc) == "function" then
+    pcall(function()
+        if type(getgc) == "function" then
             for _, f in ipairs(getgc(false)) do
-                if type(f) == "function" and debug.info(f, "n") == "ProcessCreate" then fn = f break end
+                if type(f) == "function" then
+                    local src = debug.info(f, "s") or ""
+                    if src:find("OrbCmds", 1, true) and type(debug.getupvalues) == "function" then
+                        for _, up in pairs(debug.getupvalues(f)) do
+                            if type(up) == "table" then
+                                for _, v in pairs(up) do
+                                    if type(v) == "table" and type(v.Collect) == "function" then
+                                        orbMapCache = up
+                                        return
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
-        if type(fn) ~= "function" or type(debug.getupvalues) ~= "function" then return nil end
-        for _, up in pairs(debug.getupvalues(fn)) do
-            if type(up) == "table" then
-                local strKeys = false
-                for k in pairs(up) do if type(k) == "string" then strKeys = true break end end
-                if not strKeys then return up end
-            end
-        end
-        return nil
     end)
-    if ok and type(map) == "table" then orbMapCache = map end
     return orbMapCache
 end
 

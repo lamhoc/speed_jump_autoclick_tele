@@ -152,18 +152,29 @@ function Progression.autoOpenSlots(state)
     if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
 
     local now = os.clock()
-    if now - (state.LastSlotPurchaseAt or 0) < 15 then return end
+    if now - (state.LastSlotPurchaseAt or 0) < 8 then return end
     state.LastSlotPurchaseAt = now
 
+    -- Kích hoạt Proximity của cả 2 máy nâng cấp slot (cả dạng Model và dạng Tên)
     pcall(function()
         Net.netFire("Machines: Mark Approached", "EquipSlotsMachine")
         Net.netFire("Machines: Mark Approached", "EggHatchSlotsMachine")
+        local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
+        if machFolder then
+            local m1 = machFolder:FindFirstChild("EquipSlotsMachine")
+            local m2 = machFolder:FindFirstChild("EggHatchSlotsMachine")
+            if m1 then Net.netFire("Machines: Mark Approached", m1) end
+            if m2 then Net.netFire("Machines: Mark Approached", m2) end
+        end
     end)
     task.wait(0.1)
 
     -- Mua Slot Pet
     for _ = 1, 5 do
-        local ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase")
+        local ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase", 1)
+        if not ok or res == false then
+            ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase")
+        end
         if not ok or res == false then
             local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "PetSlots")
             if not okFb or resFb == false then break end
@@ -173,7 +184,10 @@ function Progression.autoOpenSlots(state)
 
     -- Mua Slot Trứng
     for _ = 1, 5 do
-        local ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase")
+        local ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase", 1)
+        if not ok or res == false then
+            ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase")
+        end
         if not ok or res == false then
             local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "EggSlots")
             if not okFb or resFb == false then break end

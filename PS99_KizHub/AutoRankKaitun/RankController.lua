@@ -55,8 +55,14 @@ function RankController.GoalTitle(raw, parsed)
     if type(raw) == "table" and type(raw.Title) == "string" and raw.Title ~= "" then
         return raw.Title
     end
+    if Net.isfn(G.QuestCmds, "MakeTitle") then
+        local ok, t = Net.gcall(G.QuestCmds.MakeTitle, raw)
+        if ok and type(t) == "string" and #t > 0 then
+            return t
+        end
+    end
     local name = RankData.GOAL_TYPE_NAMES[parsed.Type] or ("Type " .. tostring(parsed.Type))
-    return string.format("%s (%s/%s)", name, Net.int(parsed.Progress), Net.int(parsed.Amount))
+    return string.format("%s (%s/%s)", name, Net.int(parsed.Progress or 0), Net.int(parsed.Amount or 0))
 end
 
 function RankController.RankInfo()
@@ -114,7 +120,8 @@ function RankController.EarnedUnclaimedRewards(info)
     local cum = 0
     for i, rw in ipairs(info.rewards) do
         cum = cum + (tonumber(type(rw) == "table" and rw.StarsRequired) or 0)
-        if cum <= info.stars and info.redeemed[tostring(i)] == nil then
+        local isRedeemed = (info.redeemed[tostring(i)] ~= nil) or (info.redeemed[i] ~= nil)
+        if cum <= info.stars and not isRedeemed then
             out[#out + 1] = i
         end
     end
@@ -131,7 +138,7 @@ function RankController.ActiveGoals()
 
     local list, byType = {}, {}
     for tier, g in pairs(raw) do
-        if type(g) == "table" and g.Type and g.Amount then
+        if type(g) == "table" and g.Type ~= nil then
             local amount = tonumber(g.Amount) or 0
             local progress = tonumber(g.Progress) or 0
             local copy = {
@@ -241,11 +248,14 @@ function RankController.ClaimRewards(info, state)
     state.Counters = state.Counters or { Claimed = 0 }
 
     for i in pairs(state.PendingClaims) do
-        if info.redeemed[tostring(i)] ~= nil then
+        if info.redeemed[tostring(i)] ~= nil or info.redeemed[i] ~= nil then
             state.Counters.Claimed = state.Counters.Claimed + 1
             state.PendingClaims[i] = nil
         end
     end
+
+    -- Thử kích hoạt Ranks_ClaimAll RemoteEvent trước
+    pcall(function() Net.netFire("Ranks_ClaimAll") end)
 
     local unclaimed = RankController.EarnedUnclaimedRewards(info)
     if #unclaimed == 0 then return end
@@ -259,9 +269,11 @@ function RankController.ClaimRewards(info, state)
             state.ClaimAttempts[i] = attempts + 1
             state.ClaimedAt[i] = now
             state.PendingClaims[i] = true
-            local ok, err = Net.netInvoke("Ranks_ClaimReward", i)
+
+            -- Ranks_ClaimReward là RemoteEvent, BẮT BUỘC gọi NetFire
+            local ok, err = Net.netFire("Ranks_ClaimReward", i)
             if ok then
-                task.wait(0.3)
+                task.wait(0.2)
             end
         end
     end
