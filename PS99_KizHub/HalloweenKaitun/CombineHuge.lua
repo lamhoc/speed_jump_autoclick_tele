@@ -38,7 +38,17 @@ function CombineHuge.combineDir()
         local ok, v = pcall(function() return G.Directory.HalloweenCraftingMachines end)
         all = ok and v or nil
     end
-    return type(all) == "table" and all[K.COMBINE_ID] or nil
+    if type(all) == "table" then
+        if all[K.COMBINE_ID] then return all[K.COMBINE_ID] end
+        if all["HalloweenGamesCombine"] then return all["HalloweenGamesCombine"] end
+        if all["Combine-o-Matic"] then return all["Combine-o-Matic"] end
+        for _, v in pairs(all) do
+            if type(v) == "table" and type(v.Recipes) == "table" then
+                return v
+            end
+        end
+    end
+    return nil
 end
 
 function CombineHuge.ingredientNeed(dir, ing)
@@ -119,18 +129,33 @@ function CombineHuge.combineRecipes()
 end
 
 function CombineHuge.combineMachineStand()
+    local mach = nil
+    local function findInMachines(machinesFolder)
+        if not machinesFolder then return nil end
+        for _, n in ipairs({ K.COMBINE_MACHINE, "Combine-o-Matic", "HalloweenPetCraftingMachine", "HalloweenCraftingMachine", "CombineMachine" }) do
+            local found = machinesFolder:FindFirstChild(n)
+            if found then return found end
+        end
+        for _, child in ipairs(machinesFolder:GetChildren()) do
+            local nl = child.Name:lower()
+            if nl:find("combine") or nl:find("craft") then
+                return child
+            end
+        end
+        return nil
+    end
+
     local m = instanceModelFn and instanceModelFn() or nil
     local inter = m and m:FindFirstChild("INTERACT")
-    local machines = inter and inter:FindFirstChild("Machines")
-    local mach = machines and machines:FindFirstChild(K.COMBINE_MACHINE)
+    mach = findInMachines(inter and inter:FindFirstChild("Machines"))
+
     if not mach then
         local things = workspace:FindFirstChild("__THINGS")
         local cont = things and things:FindFirstChild("__INSTANCE_CONTAINER")
         local act = cont and cont:FindFirstChild("Active")
         local inst = act and act:FindFirstChild(K.INSTANCE_ID)
         local iinter = inst and inst:FindFirstChild("INTERACT")
-        local imachines = iinter and iinter:FindFirstChild("Machines")
-        mach = imachines and imachines:FindFirstChild(K.COMBINE_MACHINE)
+        mach = findInMachines(iinter and iinter:FindFirstChild("Machines"))
     end
     if not mach then return nil end
     local pad = mach:FindFirstChild("Pad", true)
@@ -188,13 +213,23 @@ function CombineHuge.checkAndRunCombine(state)
         end
     end
 
-    local targetRecipeName = Config.TargetCombineRecipe or "Huge Bat Hoodie Bunny"
+    local targetRecipeName = Config.TargetCombineRecipe or "Combine Egg"
     local starts = {}
     local waiting = {}
 
     for i = #recipes, 1, -1 do
         local r = recipes[i]
-        local isTarget = (r.name == targetRecipeName) or (targetRecipeName == "" or targetRecipeName == nil)
+        local isTarget = false
+        if targetRecipeName == nil or targetRecipeName == "" then
+            isTarget = true
+        elseif r.name == targetRecipeName then
+            isTarget = true
+        elseif r.name:lower():find("combine") or r.name:lower():find("egg") then
+            isTarget = true
+        elseif #recipes == 1 then
+            isTarget = true
+        end
+
         if isTarget and r.open and not queued[r.index] then
             if r.ready then
                 table.insert(starts, r)
@@ -213,7 +248,7 @@ function CombineHuge.checkAndRunCombine(state)
         elseif state.combineStatus == "Rảnh" or state.combineStatus == "Đang Claim Huge" then
             state.combineStatus = "Chờ nguyên liệu"
         end
-        state.nextCombineAt = now + (Config.CombineCooldown or 60)
+        state.nextCombineAt = now + (Config.CombineCooldown or 30)
         return
     end
 
@@ -239,26 +274,45 @@ function CombineHuge.checkAndRunCombine(state)
                 end
                 state.combineStatus = "Đã nhận " .. recName
             end
-            task.wait(0.6)
+            task.wait(0.4)
         end
 
-        -- 2. Bắt đầu mẻ ghép mới khi đủ nguyên liệu
+        -- 2. Bắt đầu ghép: Mở Combine Egg (Hỗ trợ Open 10 và Craft liên tục cho tới khi hết nguyên liệu)
         for _, r in ipairs(starts) do
-            local again = CombineHuge.combineRecipes()
-            local fresh
-            for _, x in ipairs(again) do
-                if x.index == r.index then fresh = x end
-            end
-            if fresh and fresh.ready then
-                local okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index)
-                if okS and resS then
-                    local durMin = r.duration and math.floor(r.duration / 60) or 0
-                    state.combineStatus = string.format("Đang ghép %s (%dp)", r.name:gsub("Halloween ", ""):gsub("Huge ", ""), durMin)
-                else
-                    state.combineStatus = "Ghép lỗi: " .. tostring(resS)
+            local maxTries = 30
+            while maxTries > 0 do
+                maxTries = maxTries - 1
+                local again = CombineHuge.combineRecipes()
+                local fresh = nil
+                for _, x in ipairs(again) do
+                    if x.index == r.index then fresh = x break end
                 end
+                if not (fresh and fresh.ready) then
+                    break -- Đã hết nguyên liệu
+                end
+
+                -- Thử gọi Open 10 nếu đủ điều kiện
+                local crafted = false
+                local ok10, res10 = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index, 10)
+                if ok10 and (res10 == true or type(res10) == "table") then
+                    crafted = true
+                    state.combineStatus = "Đã mở 10 " .. r.name
+                else
+                    -- Fallback craft 1
+                    local okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index, 1)
+                    if not okS or resS == false then
+                        okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index)
+                    end
+                    if okS and (resS == true or type(resS) == "table") then
+                        crafted = true
+                        state.combineStatus = "Đã mở 1 " .. r.name
+                    else
+                        state.combineStatus = "Ghép dừng: " .. tostring(resS or res10)
+                        break
+                    end
+                end
+                task.wait(0.35)
             end
-            task.wait(0.6)
         end
     end)
 
@@ -266,7 +320,7 @@ function CombineHuge.checkAndRunCombine(state)
         Net.teleportTo(savedPos)
     end
     state.excursion = nil
-    state.nextCombineAt = os.clock() + (Config.CombineCooldown or 60)
+    state.nextCombineAt = os.clock() + (Config.CombineCooldown or 30)
 end
 
 return CombineHuge

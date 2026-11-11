@@ -30,8 +30,8 @@ local Config = {
     UpgradeCooldown = 180,
 
     AutoCombine = true,
-    TargetCombineRecipe = "Huge Bat Hoodie Bunny",
-    CombineCooldown = 60,
+    TargetCombineRecipe = "Combine Egg",
+    CombineCooldown = 30,
 
     -- [BẬT / TẮT AUTO DAYCARE]: true = Bật, false = Tắt hoàn toàn
     AutoDaycare = false,
@@ -91,6 +91,14 @@ if type(genv.KaitunConfig) == "table" then
     end
 else
     genv.KaitunConfig = Config
+end
+
+-- Tự động chuyển đổi công thức cũ (Huge Bat Hoodie Bunny) sang Combine Egg sau update
+if Config.TargetCombineRecipe == "Huge Bat Hoodie Bunny" or Config.TargetCombineRecipe == nil or Config.TargetCombineRecipe == "" then
+    Config.TargetCombineRecipe = "Combine Egg"
+    if type(genv.KaitunConfig) == "table" then
+        genv.KaitunConfig.TargetCombineRecipe = "Combine Egg"
+    end
 end
 
 return {
