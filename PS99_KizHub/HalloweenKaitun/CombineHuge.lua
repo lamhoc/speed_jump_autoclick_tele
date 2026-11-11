@@ -165,6 +165,79 @@ function CombineHuge.combineMachineStand()
     return mach:GetPivot().Position + Vector3.new(0, 3, 6)
 end
 
+-- Quét kiểm tra máy Combine-o-Matic đã có Combine Egg hay chưa (phát hiện server cũ)
+function CombineHuge.scanCombineEggAvailability()
+    local recipes, dir = CombineHuge.combineRecipes()
+    if not dir or #recipes == 0 then
+        return false, "Không tìm thấy dữ liệu máy Combine-o-Matic"
+    end
+
+    for _, r in ipairs(recipes) do
+        local nl = r.name:lower()
+        if (nl:find("combine") and nl:find("egg")) or nl == "combine egg" then
+            return true, r
+        end
+    end
+
+    local oldNames = {}
+    for _, r in ipairs(recipes) do
+        table.insert(oldNames, r.name)
+    end
+    local detail = #oldNames > 0 and table.concat(oldNames, ", ") or "Không rõ"
+    return false, string.format("Server cũ: Chưa có Combine Egg (Đang có: %s)", detail)
+end
+
+-- Chức năng Server Hop tìm server mới đã cập nhật Combine Egg
+local isHoppingServer = false
+function CombineHuge.hopServer()
+    if isHoppingServer then return end
+    isHoppingServer = true
+
+    local loader = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/lamhoc/speed_jump_autoclick_tele/main/PS99_KizHub/HalloweenKaitun/main.lua"))()'
+    if type(queue_on_teleport) == "function" then
+        pcall(queue_on_teleport, loader)
+    end
+
+    task.spawn(function()
+        local TeleportService = game:GetService("TeleportService")
+        local HttpService = game:GetService("HttpService")
+        local placeId = game.PlaceId
+        local success = false
+
+        pcall(function()
+            local url = string.format("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100", tostring(placeId))
+            local reqFn = (type(request) == "function" and request)
+                or (type(http_request) == "function" and http_request)
+                or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+            local body = nil
+            if reqFn then
+                local res = reqFn({ Url = url, Method = "GET" })
+                if res and res.Body then body = res.Body end
+            elseif type(game.HttpGet) == "function" then
+                body = game:HttpGet(url)
+            end
+            if body then
+                local data = HttpService:JSONDecode(body)
+                if data and type(data.data) == "table" then
+                    for _, s in ipairs(data.data) do
+                        if s.id ~= game.JobId and (s.playing or 0) < (s.maxPlayers or 0) and (s.playing or 0) > 0 then
+                            TeleportService:TeleportToPlaceInstance(placeId, s.id, game:GetService("Players").LocalPlayer)
+                            success = true
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+
+        if not success then
+            pcall(function()
+                TeleportService:Teleport(placeId, game:GetService("Players").LocalPlayer)
+            end)
+        end
+    end)
+end
+
 function CombineHuge.activeQueues()
     -- 1. Ưu tiên gọi Remote mạng
     local okQ, queue = Net.netInvoke("HalloweenCraftingMachine_GetQueue")
@@ -192,6 +265,26 @@ function CombineHuge.checkAndRunCombine(state)
     if not Config.AutoCombine or (inEventFn and not inEventFn()) or state.excursion ~= nil then return end
     local now = os.clock()
     if now < (state.nextCombineAt or 0) then return end
+
+    -- 1. Quét kiểm tra xem máy Combine-o-Matic trên server hiện tại đã có Combine Egg hay chưa
+    local hasCombineEgg, eggStatusMsg = CombineHuge.scanCombineEggAvailability()
+    if not hasCombineEgg then
+        state.combineStatus = "⚠ " .. tostring(eggStatusMsg)
+        state.serverHasCombineEgg = false
+
+        if Config.AutoHopIfOldServer then
+            state.combineStatus = "⚠ Server cũ -> Đang chuyển server mới có Combine Egg..."
+            task.wait(2.0)
+            CombineHuge.hopServer()
+            state.nextCombineAt = now + 90
+            return
+        end
+
+        state.nextCombineAt = now + (Config.CombineCooldown or 30)
+        return
+    end
+
+    state.serverHasCombineEgg = true
 
     local recipes, dir = CombineHuge.combineRecipes()
     if not dir or #recipes == 0 then return end

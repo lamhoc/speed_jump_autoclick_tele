@@ -33,6 +33,11 @@ local Config = {
     TargetCombineRecipe = "Combine Egg",
     CombineCooldown = 30,
 
+    -- [TỰ ĐỘNG ĐỔI SERVER NẾU GẶP SERVER CŨ CHƯA CÓ COMBINE EGG]:
+    -- true: Tự động hop server tìm server mới hơn đã update Combine Egg
+    -- false: Ở lại server hiện tại và hiển thị cảnh báo "Server cũ" trên GUI
+    AutoHopIfOldServer = false,
+
     -- [BẬT / TẮT AUTO DAYCARE]: true = Bật, false = Tắt hoàn toàn
     AutoDaycare = false,
 
