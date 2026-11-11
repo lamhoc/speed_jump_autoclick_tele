@@ -24,7 +24,7 @@ local function import(path)
     }
     local content = nil
     for _, p in ipairs(candidates) do
-        if type(isfile) == "function" and isfile(p) then
+        if type(readfile) == "function" then
             local ok, data = pcall(readfile, p)
             if ok and type(data) == "string" and #data > 0 then
                 content = data
@@ -55,17 +55,17 @@ local function import(path)
             end
         end
 
-        -- Tự động lưu cache cục bộ trên Mobile (Delta) để các lần sau nạp tức thì từ bộ nhớ máy
-        if content and type(writefile) == "function" and type(makefolder) == "function" then
+        -- Tự động lưu cache cục bộ trên Mobile (Delta) nếu executor hỗ trợ
+        if content and type(writefile) == "function" then
             pcall(function()
-                local isf = (type(isfolder) == "function" and isfolder) or function() return false end
-                if not isf("PS99_KizHub") then makefolder("PS99_KizHub") end
-                local parts = cleanPath:split("/")
-                if #parts > 1 then
-                    local sub = "PS99_KizHub/" .. parts[1]
-                    if not isf(sub) then makefolder(sub) end
+                if type(makefolder) == "function" then
+                    pcall(makefolder, "PS99_KizHub")
+                    local parts = cleanPath:split("/")
+                    if #parts > 1 then
+                        pcall(makefolder, "PS99_KizHub/" .. parts[1])
+                    end
                 end
-                writefile("PS99_KizHub/" .. cleanPath, content)
+                pcall(writefile, "PS99_KizHub/" .. cleanPath, content)
             end)
         end
     end
