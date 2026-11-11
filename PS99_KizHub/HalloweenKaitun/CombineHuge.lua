@@ -116,15 +116,30 @@ function CombineHuge.combineRecipes()
         if type(r) == "table" and r.Result and type(r.Ingredients) == "table" and r.Hidden ~= true then
             local name = tostring(Net.gval(function() return r.Result:GetId() end) or ("Recipe " .. i))
             local open = r.EnabledFFlag == nil or CombineHuge.flagValue(r.EnabledFFlag) ~= false
-            local ready, missing = true, {}
+            local ready = true
+            local missing = {}
+            local summary = {}
 
             for _, ing in ipairs(r.Ingredients) do
                 local need = CombineHuge.ingredientNeed(dir, ing)
                 local have = CombineHuge.ingredientHave(dir, ing)
+                local rawName = tostring(Net.gval(function() return ing.Item:GetId() end) or "?")
+                
+                -- Rút gọn tên nguyên liệu để hiển thị gọn đẹp trên UI
+                local ingName = rawName
+                if ingName:find("Shard") then
+                    ingName = "Shard"
+                elseif ingName:find("Agony") then
+                    ingName = "Agony"
+                else
+                    ingName = ingName:gsub("Halloween ", ""):gsub("Masquerade ", ""):gsub("HalloweenGames", "")
+                end
+
+                local itemProgress = string.format("%s %d/%d", ingName, have, need)
+                table.insert(summary, itemProgress)
                 if have < need then
                     ready = false
-                    local ingName = tostring(Net.gval(function() return ing.Item:GetId() end) or "?"):gsub("Halloween ", ""):gsub("Masquerade ", "")
-                    missing[#missing + 1] = string.format("%s %d/%d", ingName, have, need)
+                    table.insert(missing, itemProgress)
                 end
             end
 
@@ -134,11 +149,53 @@ function CombineHuge.combineRecipes()
                 open = open,
                 ready = ready,
                 missing = table.concat(missing, ", "),
+                summary = table.concat(summary, ", "),
                 duration = tonumber(CombineHuge.flagValue(r.DurationFFlag)) or tonumber(r.Duration)
             }
         end
     end
     return out, dir
+end
+
+-- Lấy văn bản chi tiết nguyên liệu còn thiếu cho GUI
+function CombineHuge.getCombineStatusText()
+    local recipes, dir = CombineHuge.combineRecipes()
+    if not dir or #recipes == 0 then
+        return "Chưa nạp công thức máy"
+    end
+
+    local q = CombineHuge.activeQueues()
+    for _, item in pairs(q) do
+        if type(item) == "table" then
+            local rem = tonumber(item.Remaining) or tonumber(item.TimeLeft) or 0
+            if rem > 0 then
+                return string.format("Đang ghép (%ds)", math.floor(rem))
+            end
+        end
+    end
+
+    local target = nil
+    for _, r in ipairs(recipes) do
+        if r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg") then
+            target = r
+            break
+        end
+    end
+    if not target and #recipes > 0 then
+        target = recipes[1]
+    end
+
+    if target then
+        if target.ready then
+            return "Sẵn sàng mở (" .. target.summary .. ")"
+        elseif target.missing and target.missing ~= "" then
+            return "Thiếu: " .. target.missing
+        elseif target.summary and target.summary ~= "" then
+            return "Thiếu: " .. target.summary
+        end
+    end
+
+    return "Chờ nguyên liệu"
 end
 
 function CombineHuge.combineMachineStand()
@@ -327,7 +384,8 @@ function CombineHuge.checkAndRunCombine(state)
             if r.ready then
                 table.insert(starts, r)
             else
-                table.insert(waiting, r.missing)
+                local missText = (r.missing and r.missing ~= "") and r.missing or r.summary
+                table.insert(waiting, missText)
             end
         elseif isTarget and queued[r.index] and (tonumber(queued[r.index].Remaining) or 0) > 0 then
             local rem = tonumber(queued[r.index].Remaining) or 0
@@ -338,10 +396,10 @@ function CombineHuge.checkAndRunCombine(state)
     if #readyClaims == 0 and #starts == 0 then
         if #waiting > 0 then
             state.combineStatus = "Thiếu: " .. waiting[1]
-        elseif state.combineStatus == "Rảnh" or state.combineStatus == "Đang Claim Huge" then
-            state.combineStatus = "Chờ nguyên liệu"
+        else
+            state.combineStatus = CombineHuge.getCombineStatusText()
         end
-        state.nextCombineAt = now + (cfg.CombineCooldown or 30)
+        state.nextCombineAt = now + (cfg.CombineCooldown or 15)
         return
     end
 

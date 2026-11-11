@@ -265,7 +265,7 @@ function DashboardGui.create(config)
 
     uiElements.UptimeLabel  = createRow("Thời Gian Chạy:", "00:00:00 (0.0 phút)", 0, Color3.fromRGB(0, 255, 140))
     uiElements.ZoneLabel    = createRow("Zone Hiện Tại:", "Đang tải...", 20)
-    uiElements.CombineLabel = createRow("Ghép Huge Bunny:", "Rảnh", 40, Color3.fromRGB(255, 215, 0))
+    uiElements.CombineLabel = createRow("Combine Egg:", "Rảnh", 40, Color3.fromRGB(255, 215, 0))
     uiElements.MailLabel    = createRow("Auto Mailbox:", "Rảnh", 60, Color3.fromRGB(0, 200, 255))
     uiElements.DaycareLabel = createRow("Auto Daycare:", "Đang tải...", 80, Color3.fromRGB(180, 130, 255))
     uiElements.CoinsLabel   = createRow("Tiền Tệ / Coins:", "0", 100)

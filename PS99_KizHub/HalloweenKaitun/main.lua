@@ -316,6 +316,16 @@ local function updateKizhubGui()
             ui.ZoneLabel.Text = string.format("Zone %d/8 (%s)", z, zInfo and zInfo.Name or "...")
         end
         if ui.CombineLabel then
+            local now = os.clock()
+            if (now - (state.lastCombineUiUpdate or 0) >= 3) and (state.excursion == nil) then
+                state.lastCombineUiUpdate = now
+                if type(CombineHuge.getCombineStatusText) == "function" then
+                    local freshStatus = CombineHuge.getCombineStatusText()
+                    if freshStatus and freshStatus ~= "" then
+                        state.combineStatus = freshStatus
+                    end
+                end
+            end
             ui.CombineLabel.Text = state.combineStatus or "Rảnh"
         end
         if ui.MailLabel then
