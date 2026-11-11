@@ -272,10 +272,22 @@ end
 log("\n========== HOÀN TẤT DUMP ==========")
 local fullDump = table.concat(logs, "\n")
 
--- 1. Lưu ra file ps99_dump.txt
+-- 1. Lưu ra file ps99_dump.txt trong Delta workspace
+local savedList = {}
 if type(writefile) == "function" then
-    pcall(writefile, "ps99_dump.txt", fullDump)
-    log("[PROBE] Đã lưu kết quả vào file: ps99_dump.txt")
+    pcall(function()
+        writefile("ps99_dump.txt", fullDump)
+        table.insert(savedList, "workspace/ps99_dump.txt")
+    end)
+    pcall(function()
+        if type(makefolder) == "function" then
+            local ok, f = pcall(isfolder, "PS99_KizHub")
+            if not (ok and f) then pcall(makefolder, "PS99_KizHub") end
+        end
+        writefile("PS99_KizHub/ps99_dump.txt", fullDump)
+        table.insert(savedList, "workspace/PS99_KizHub/ps99_dump.txt")
+    end)
+    log("[PROBE] Đã lưu kết quả vào Delta workspace: %s", table.concat(savedList, " & "))
 end
 
 -- 2. Đưa vào Clipboard
@@ -303,8 +315,8 @@ pcall(function()
     sg.DisplayOrder = 999999
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 360, 0, 240)
-    frame.Position = UDim2.new(0.5, -180, 0.5, -120)
+    frame.Size = UDim2.new(0, 380, 0, 260)
+    frame.Position = UDim2.new(0.5, -190, 0.5, -130)
     frame.BackgroundColor3 = Color3.fromRGB(15, 18, 25)
     frame.BorderSizePixel = 0
     frame.Parent = sg
@@ -323,14 +335,16 @@ pcall(function()
     title.TextSize = 13
     title.BackgroundTransparency = 1
 
+    local saveInfo = #savedList > 0 and ("✔ Đã lưu vào Delta workspace:\n" .. table.concat(savedList, "\n")) or "Chưa lưu được file workspace."
+    local clipInfo = clipSuccess and "✔ Đã tự động copy vào Clipboard!" or "Nhấn nút copy bên dưới để lấy log."
+
     local status = Instance.new("TextLabel", frame)
-    status.Size = UDim2.new(1, -20, 0, 50)
-    status.Position = UDim2.new(0, 10, 0, 35)
-    status.Text = clipSuccess and "✔ ĐÃ TỰ ĐỘNG COPY VÀO CLIPBOARD!\nNhấn nút bên dưới nếu muốn copy lại."
-                              or "Chưa copy tự động được. Hãy nhấn nút Copy bên dưới!"
+    status.Size = UDim2.new(1, -20, 0, 65)
+    status.Position = UDim2.new(0, 10, 0, 32)
+    status.Text = string.format("%s\n%s", saveInfo, clipInfo)
     status.TextColor3 = Color3.fromRGB(220, 220, 220)
     status.Font = Enum.Font.Gotham
-    status.TextSize = 12
+    status.TextSize = 11
     status.TextWrapped = true
     status.BackgroundTransparency = 1
 

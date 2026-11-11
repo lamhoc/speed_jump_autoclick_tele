@@ -10,6 +10,23 @@ local genv = (type(getgenv) == "function" and getgenv()) or _G
 -- Trình nạp module an toàn (Hỗ trợ cả Local Workspace & GitHub Raw Fallback)
 local GITHUB_REPO_BASE = "https://raw.githubusercontent.com/lamhoc/speed_jump_autoclick_tele/refs/heads/main/PS99_KizHub/"
 
+local function ensureParentDirs(filePath)
+    if type(makefolder) ~= "function" then return end
+    local parts = filePath:gsub("\\", "/"):split("/")
+    local current = ""
+    for i = 1, #parts - 1 do
+        current = current .. (current == "" and "" or "/") .. parts[i]
+        local exists = false
+        if type(isfolder) == "function" then
+            local ok, res = pcall(isfolder, current)
+            if ok and res == true then exists = true end
+        end
+        if not exists then
+            pcall(makefolder, current)
+        end
+    end
+end
+
 local function import(path)
     local cleanPath = path:gsub("\\", "/")
     local cacheKey = "__KizHub_Cache_" .. cleanPath
@@ -24,7 +41,14 @@ local function import(path)
     }
     local content = nil
     for _, p in ipairs(candidates) do
-        if type(readfile) == "function" then
+        local exists = false
+        if type(isfile) == "function" then
+            local ok, res = pcall(isfile, p)
+            if ok and res == true then exists = true end
+        else
+            exists = true
+        end
+        if exists and type(readfile) == "function" then
             local ok, data = pcall(readfile, p)
             if ok and type(data) == "string" and #data > 0 then
                 content = data
@@ -55,17 +79,12 @@ local function import(path)
             end
         end
 
-        -- Tự động lưu cache cục bộ trên Mobile (Delta) nếu executor hỗ trợ
+        -- Tự động lưu cache cục bộ vào Delta workspace
         if content and type(writefile) == "function" then
             pcall(function()
-                if type(makefolder) == "function" then
-                    pcall(makefolder, "PS99_KizHub")
-                    local parts = cleanPath:split("/")
-                    if #parts > 1 then
-                        pcall(makefolder, "PS99_KizHub/" .. parts[1])
-                    end
-                end
-                pcall(writefile, "PS99_KizHub/" .. cleanPath, content)
+                local localPath = "PS99_KizHub/" .. cleanPath
+                ensureParentDirs(localPath)
+                writefile(localPath, content)
             end)
         end
     end
