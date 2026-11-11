@@ -323,6 +323,51 @@ local function StartThreads()
         Webhook.checkNewHugeHatched(Network.getSave, Config.Webhook and Config.Webhook.Url)
     end, 5)
 
+    -- [1. Auto Tap / Click Breakables]: 10Hz song song cùng pet
+    if Config.AutoTapBreakables ~= false then
+        pcall(QuestFarm.enableAutoTapper)
+        SpawnLoop("auto tap", function()
+            QuestFarm.AutoTapTick(State)
+        end, function() return Config.AutoTapDelay or 0.1 end)
+    end
+
+    -- [2. Infinite / Max Pet Speed]: Hook CalculateSpeedMultiplier x10 cực đại
+    if Config.MaxPetSpeed ~= false then
+        pcall(function() QuestFarm.installMaxPetSpeed(State) end)
+    end
+
+    -- [3. Orb Collector]: Tự động quét và hút sạch ngọc rơi (0.8s)
+    if Config.AutoCollectOrbs ~= false then
+        SpawnLoop("collect orbs", function()
+            QuestFarm.CollectOrbsTick(State)
+        end, function() return Config.OrbCollectInterval or 0.8 end)
+    end
+
+    -- [4. Disable Egg Animation]: Bỏ qua cutscene ấp trứng
+    if Config.DisableEggAnimation ~= false then
+        pcall(QuestHatch.installNoEggAnimation)
+    end
+
+    -- [5. Auto Buffs]: Tự cắn Trái cây, Potion, Đồ chơi định kỳ
+    local bCfg = Config.AutoBuffs
+    if bCfg and bCfg.Enabled ~= false then
+        if bCfg.Fruits ~= false then
+            SpawnLoop("buff fruits", function()
+                QuestItems.AutoBuffFruits(State)
+            end, function() return bCfg.FruitInterval or 60 end)
+        end
+        if bCfg.Potions ~= false then
+            SpawnLoop("buff potions", function()
+                QuestItems.AutoBuffPotions(State)
+            end, function() return bCfg.PotionInterval or 90 end)
+        end
+        if bCfg.Toys ~= false then
+            SpawnLoop("buff toys", function()
+                QuestItems.AutoBuffToys(State)
+            end, function() return bCfg.ToyInterval or 180 end)
+        end
+    end
+
     -- Cập nhật Dashboard GUI (1.0s)
     SpawnLoop("gui", function()
         updateRankGui()

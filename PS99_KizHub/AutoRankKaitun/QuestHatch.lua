@@ -29,6 +29,36 @@ function QuestHatch.init(deps)
     G = deps.Modules.G
     Net = deps.Network
     Config = deps.Config
+
+    if Config.DisableEggAnimation ~= false then
+        QuestHatch.installNoEggAnimation()
+    end
+end
+
+-- ================= 4. DISABLE EGG ANIMATION (BỎ QUA HOẠT ẢNH MỞ TRỨNG) =================
+local isEggAnimHooked = false
+function QuestHatch.installNoEggAnimation()
+    if isEggAnimHooked then return end
+    task.spawn(function()
+        for attempt = 1, 30 do
+            local ok, hooked = pcall(function()
+                local RS = game:GetService("ReplicatedStorage")
+                local eggCmds = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("EggCmds")
+                if not eggCmds or type(getsenv) ~= "function" then return false end
+                local env = getsenv(eggCmds)
+                if type(env) == "table" and type(env.PlayEggAnimation) == "function" then
+                    env.PlayEggAnimation = function() return end
+                    return true
+                end
+                return false
+            end)
+            if ok and hooked == true then
+                isEggAnimHooked = true
+                break
+            end
+            task.wait(1.0)
+        end
+    end)
 end
 
 function QuestHatch.BestEgg()

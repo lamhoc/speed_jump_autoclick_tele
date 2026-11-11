@@ -43,7 +43,7 @@ function Progression.autoPickStarterPets(state)
         end
     end
 
-    -- Bắn Remote Network chọn starter pets
+    -- Gọi RemoteFunction Network chọn starter pets (Thuần Invoke, tuyệt đối không dùng FireServer)
     local candidatePairs = {
         { "Cat", "Dog" },
         { "Dog", "Cat" },
@@ -51,10 +51,10 @@ function Progression.autoPickStarterPets(state)
         { 1, 2 },
     }
     for _, pair in ipairs(candidatePairs) do
-        pcall(function() Net.netInvoke("Pick Starter Pets", pair[1], pair[2]) end)
-        pcall(function() Net.netInvoke("Pick Starter Pets", pair) end)
-        pcall(function() Net.netFire("Pick Starter Pets", pair[1], pair[2]) end)
-        pcall(function() Net.netFire("Pick Starter Pets", pair) end)
+        local ok1 = pcall(function() Net.netInvoke("Pick Starter Pets", pair[1], pair[2]) end)
+        if ok1 then break end
+        local ok2 = pcall(function() Net.netInvoke("Pick Starter Pets", pair) end)
+        if ok2 then break end
     end
 
     -- Quét PlayerGui nếu có bảng chọn pet giao diện

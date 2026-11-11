@@ -355,4 +355,97 @@ function QuestFarm.OnBreakableAdded(model, state)
     end
 end
 
+-- ================= 1. AUTO TAP / AUTO CLICK BREAKABLES =================
+function QuestFarm.enableAutoTapper()
+    pcall(function() Net.netInvoke("AutoTapper_Toggle", true) end)
+    pcall(function() Net.netFire("AutoTapper_Toggle", true) end)
+end
+
+function QuestFarm.AutoTapTick(state)
+    if not state or not state.Alive or not state.Enabled then return end
+    local zoneId = QuestFarm.BestZoneId()
+    if not zoneId then return end
+
+    local p1, p2, p3 = QuestFarm.CollectBreakables(zoneId)
+    local target = (#p1 > 0 and p1[math.random(1, #p1)])
+        or (#p2 > 0 and p2[math.random(1, #p2)])
+        or (#p3 > 0 and p3[math.random(1, #p3)])
+
+    if target then
+        Net.netUnreliable("Breakables_PlayerDealDamage", target)
+    end
+end
+
+-- ================= 2. INFINITE / MAX PET SPEED =================
+local isPetSpeedHooked = false
+function QuestFarm.installMaxPetSpeed(state)
+    if isPetSpeedHooked then return end
+    task.spawn(function()
+        for attempt = 1, 30 do
+            local hooked = false
+            pcall(function()
+                local PlayerPet = G.PlayerPet or (G.require and G.require("PlayerPet"))
+                if type(PlayerPet) == "table" and type(PlayerPet.CalculateSpeedMultiplier) == "function" then
+                    local orig = PlayerPet.CalculateSpeedMultiplier
+                    PlayerPet.CalculateSpeedMultiplier = function(self, ...)
+                        if state and state.Alive and state.Enabled then
+                            return 10 -- Hệ số tốc độ x10 cực đại giúp pet bay tức thì giữa các quặng
+                        end
+                        return orig(self, ...)
+                    end
+                    hooked = true
+                    isPetSpeedHooked = true
+                end
+            end)
+            if hooked then break end
+            task.wait(1.0)
+        end
+    end)
+end
+
+-- ================= 3. ORB COLLECTOR (TỰ ĐỘNG HÚT NGỌC/ORBS) =================
+local orbMapCache = nil
+function QuestFarm.findOrbMap()
+    if type(orbMapCache) == "table" then return orbMapCache end
+    local RS = game:GetService("ReplicatedStorage")
+    local ok, map = pcall(function()
+        local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds")
+        if not mod or type(getsenv) ~= "function" then return nil end
+        local env = getsenv(mod)
+        local fn = type(env) == "table" and env.ProcessCreate or nil
+        if type(fn) ~= "function" and type(getgc) == "function" then
+            for _, f in ipairs(getgc(false)) do
+                if type(f) == "function" and debug.info(f, "n") == "ProcessCreate" then fn = f break end
+            end
+        end
+        if type(fn) ~= "function" or type(debug.getupvalues) ~= "function" then return nil end
+        for _, up in pairs(debug.getupvalues(fn)) do
+            if type(up) == "table" then
+                local strKeys = false
+                for k in pairs(up) do if type(k) == "string" then strKeys = true break end end
+                if not strKeys then return up end
+            end
+        end
+        return nil
+    end)
+    if ok and type(map) == "table" then orbMapCache = map end
+    return orbMapCache
+end
+
+function QuestFarm.CollectOrbsTick(state)
+    if not state or not state.Alive or not state.Enabled then return end
+    local map = QuestFarm.findOrbMap()
+    if type(map) == "table" then
+        local now = workspace:GetServerTimeNow()
+        for _, orb in pairs(map) do
+            if type(orb) == "table" and not orb._collected and not orb._destroyed and type(orb.Collect) == "function" then
+                local age = now - (tonumber(orb._timestamp) or now)
+                if age >= (tonumber(orb._pickupDelay) or 0) then
+                    pcall(orb.Collect, orb, nil, nil, true)
+                end
+            end
+        end
+    end
+end
+
 return QuestFarm

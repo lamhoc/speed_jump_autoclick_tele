@@ -24,6 +24,23 @@ local Config = {
     AutoBuyZones = true,
     AutoEquipBestPets = true,
 
+    -- 5 Tính Năng Bổ Trợ Đặc Tả (Mới tích hợp)
+    AutoTapBreakables = true,     -- [1. Auto Click]: Click phá bãi farm 10Hz song song cùng pet
+    AutoTapDelay = 0.1,           -- Độ trễ nhịp tap (0.1s = 10Hz)
+    MaxPetSpeed = true,           -- [2. Infinite Pet Speed]: Hook CalculateSpeedMultiplier x10 cực đại
+    AutoCollectOrbs = true,       -- [3. Orb Collector]: Tự động quét và hút sạch ngọc rơi mỗi 0.8s
+    OrbCollectInterval = 0.8,
+    DisableEggAnimation = true,   -- [4. Skip Egg Animation]: Bỏ qua cutscene ấp trứng
+    AutoBuffs = {                 -- [5. Auto Buffs]: Tự động duy trì trạng thái buff kho đồ
+        Enabled = true,
+        Fruits = true,            -- Tự ăn hoa quả gom nhóm tối đa 20 quả/đợt
+        FruitInterval = 60,
+        Potions = true,           -- Tự cắn bình thuốc Damage, Coins, Luck, Speed, Treasure
+        PotionInterval = 90,
+        Toys = true,              -- Tự chơi Đồ chơi (Toy Ball, Toy Bone, Squeaky Toy)
+        ToyInterval = 180,
+    },
+
     -- Tự động hóa tài khoản mới & Nâng cấp
     AutoPickStarterPets = true,   -- Tự chọn 2 pet starter cho acc mới
     AutoOpenSlots = true,         -- Tự mở slot pet & slot hatch trứng bằng Gems
@@ -37,9 +54,9 @@ local Config = {
         TargetRank = 11,
     },
 
-    -- KizHub Blackout GUI & Performance (Đã tắt GUI & phục hồi màn hình 3D theo yêu cầu)
-    ShowGui = false,            -- [TẮT TOÀN BỘ GUI]: false = Không vẽ GUI để xem trực quan game
-    BlackoutGui = false,        -- [TẮT MÀN HÌNH ĐEN]: false = Màn hình bình thường
+    -- KizHub Blackout GUI & Performance (Bật GUI để thao tác nút cam tròn Header)
+    ShowGui = true,             -- [BẬT GUI KIZCARD]: true = Hiển thị thẻ thông số và nút cam tròn Header
+    BlackoutGui = false,        -- [MẶC ĐỊNH KHÔNG ĐEN]: false = Mở màn hình 3D nhìn thấy game ngay
     Disable3DRendering = false, -- [BẬT KẾT XUẤT 3D]: false = Bật hiển thị 3D nhân vật, map, pet
     TargetFPS = 60,             -- FPS mượt để dễ quan sát
     GuiToggleKey = Enum.KeyCode.RightControl,

@@ -40,7 +40,13 @@ function DashboardGui.setBlackout(visible)
         BlackBackground.Visible = visible
     end
     if KizCard then
-        KizCard.Visible = visible
+        KizCard.Visible = true
+    end
+    if uiElements and uiElements.ToggleBtn then
+        uiElements.ToggleBtn.BackgroundColor3 = visible and Color3.fromRGB(255, 140, 0) or Color3.fromRGB(0, 220, 130)
+        if uiElements.ToggleBtn:FindFirstChild("Indicator") then
+            uiElements.ToggleBtn.Indicator.Text = visible and "●" or "👁"
+        end
     end
     pcall(function()
         if RunService:IsClient() and type(RunService.Set3dRenderingEnabled) == "function" then
@@ -119,18 +125,57 @@ function DashboardGui.create(config)
 
     -- Header Frame
     local HeaderFrame = Instance.new("Frame", KizCard)
+    HeaderFrame.Name = "HeaderFrame"
     HeaderFrame.Size = UDim2.new(1, 0, 0, 95)
     HeaderFrame.BackgroundTransparency = 1
-    HeaderFrame.ZIndex = 2
+    HeaderFrame.ZIndex = 5
 
-    local CrownLogo = Instance.new("ImageLabel", HeaderFrame)
+    -- Nút cam tròn trên Header điều khiển Ẩn / Hiện màn hình đen & 3D Render
+    local ToggleBtn = Instance.new("TextButton", HeaderFrame)
+    ToggleBtn.Name = "ToggleBlackoutButton"
+    ToggleBtn.Size = UDim2.new(0, 26, 0, 26)
+    ToggleBtn.Position = UDim2.new(1, -38, 0, 14)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+    ToggleBtn.BorderSizePixel = 0
+    ToggleBtn.AutoButtonColor = true
+    ToggleBtn.Active = true
+    ToggleBtn.ZIndex = 25
+    ToggleBtn.Text = ""
+    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0) -- Hình tròn hoàn hảo
+
+    local BtnStroke = Instance.new("UIStroke", ToggleBtn)
+    BtnStroke.Color = Color3.fromRGB(255, 255, 255)
+    BtnStroke.Thickness = 1.2
+    BtnStroke.Transparency = 0.4
+
+    local Indicator = Instance.new("TextLabel", ToggleBtn)
+    Indicator.Name = "Indicator"
+    Indicator.Text = "●"
+    Indicator.Font = Enum.Font.GothamBold
+    Indicator.TextSize = 13
+    Indicator.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Indicator.Size = UDim2.new(1, 0, 1, 0)
+    Indicator.BackgroundTransparency = 1
+    Indicator.ZIndex = 26
+
+    local function onToggleActivated()
+        DashboardGui.toggleBlackout()
+    end
+    ToggleBtn.Activated:Connect(onToggleActivated)
+    ToggleBtn.MouseButton1Click:Connect(onToggleActivated)
+    uiElements.ToggleBtn = ToggleBtn
+
+    local CrownLogo = Instance.new("ImageButton", HeaderFrame)
     CrownLogo.Name = "CrownLogo"
     CrownLogo.Size = UDim2.new(0, 56, 0, 56)
     CrownLogo.Position = UDim2.new(0, 18, 0, 10)
     CrownLogo.BackgroundTransparency = 1
     CrownLogo.Image = logoAssetId
     CrownLogo.ScaleType = Enum.ScaleType.Fit
-    CrownLogo.ZIndex = 2
+    CrownLogo.ZIndex = 10
+    CrownLogo.Active = true
+    CrownLogo.Activated:Connect(onToggleActivated)
+    CrownLogo.MouseButton1Click:Connect(onToggleActivated)
 
     local BrandText = Instance.new("TextLabel", HeaderFrame)
     BrandText.Name = "BrandText"
@@ -142,7 +187,7 @@ function DashboardGui.create(config)
     BrandText.BackgroundTransparency = 1
     BrandText.Position = UDim2.new(0, 18, 0, 68)
     BrandText.Size = UDim2.new(0, 56, 0, 20)
-    BrandText.ZIndex = 2
+    BrandText.ZIndex = 10
 
     local TitleInfo = Instance.new("TextLabel", HeaderFrame)
     TitleInfo.Text = titleText
@@ -151,9 +196,9 @@ function DashboardGui.create(config)
     TitleInfo.TextColor3 = Color3.fromRGB(255, 255, 255)
     TitleInfo.TextXAlignment = Enum.TextXAlignment.Left
     TitleInfo.BackgroundTransparency = 1
-    TitleInfo.Position = UDim2.new(0, 90, 0, 18)
-    TitleInfo.Size = UDim2.new(1, -90, 0, 20)
-    TitleInfo.ZIndex = 2
+    TitleInfo.Position = UDim2.new(0, 88, 0, 18)
+    TitleInfo.Size = UDim2.new(1, -130, 0, 20)
+    TitleInfo.ZIndex = 5
 
     local SubInfo = Instance.new("TextLabel", HeaderFrame)
     SubInfo.Text = subText

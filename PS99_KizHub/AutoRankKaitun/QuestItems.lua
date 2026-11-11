@@ -257,4 +257,84 @@ function QuestItems.EventTick(state)
     end
 end
 
+-- ================= 5. TỰ ĐỘNG DÙNG VẬT PHẨM TĂNG CHỈ SỐ (AUTO BUFFS) =================
+
+-- 5.1 Auto Buff Trái cây (Fruits - Tối đa 20 quả/đợt)
+function QuestItems.AutoBuffFruits(state)
+    if not state or not state.Alive or not state.Enabled then return end
+    pcall(function()
+        local save = Net.getSave()
+        local fruits = save and save.Inventory and save.Inventory.Fruit
+        if type(fruits) == "table" then
+            for _, item in pairs(fruits) do
+                if type(item) == "table" and type(item.id) == "string" then
+                    local amt = tonumber(item._am) or 0
+                    if amt > 0 then
+                        local eatAmt = math.clamp(amt, 1, 20)
+                        Net.netFire("Fruits: Consume", item.id, eatAmt)
+                        task.wait(0.08)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- 5.2 Auto Buff Bình thuốc (Potions - Damage, Coins, Luck, Speed, Treasure)
+function QuestItems.AutoBuffPotions(state)
+    if not state or not state.Alive or not state.Enabled then return end
+    pcall(function()
+        local save = Net.getSave()
+        local potions = save and save.Inventory and save.Inventory.Potion
+        if type(potions) == "table" then
+            local targetTypes = { "damage", "coins", "luck", "lucky", "speed", "treasure" }
+            for _, item in pairs(potions) do
+                if type(item) == "table" and type(item.id) == "string" then
+                    local lowerId = string.lower(item.id)
+                    local matched = false
+                    for _, kw in ipairs(targetTypes) do
+                        if lowerId:find(kw, 1, true) then
+                            matched = true
+                            break
+                        end
+                    end
+                    if matched and (tonumber(item._am) or 0) > 0 then
+                        Net.netFire("Potions: Consume", item.id, 1)
+                        task.wait(0.08)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- 5.3 Auto Buff Đồ chơi (Toys - Toy Ball, Toy Bone, Squeaky Toy)
+function QuestItems.AutoBuffToys(state)
+    if not state or not state.Alive or not state.Enabled then return end
+    pcall(function()
+        local save = Net.getSave()
+        local misc = save and save.Inventory and save.Inventory.Misc
+        if type(misc) == "table" then
+            for uid, item in pairs(misc) do
+                if type(item) == "table" and type(item.id) == "string" then
+                    local toyUid = item._uid or uid
+                    if item.id == "Toy Ball" then
+                        Net.netInvoke("ToyBall_Consume", toyUid)
+                        task.wait(0.15)
+                    elseif item.id == "Toy Bone" then
+                        Net.netInvoke("ToyBone_Consume", toyUid)
+                        task.wait(0.15)
+                    elseif item.id == "Squeaky Toy" then
+                        Net.netInvoke("SqueakyToy_Consume", toyUid)
+                        task.wait(0.15)
+                    elseif item.id:lower():find("toy", 1, true) then
+                        Net.netInvoke("Consumables_Consume", toyUid)
+                        task.wait(0.15)
+                    end
+                end
+            end
+        end
+    end)
+end
+
 return QuestItems
