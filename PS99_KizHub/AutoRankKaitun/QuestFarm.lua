@@ -173,7 +173,7 @@ function QuestFarm.StandPosition(zoneId)
 end
 
 function QuestFarm.EnsureInBestZone(state)
-    if state.HatchSession or state.Hopping or state.WorldSwitching or state.WorldMismatch then
+    if state.InitialSetupDone == false or state.SlotBuying or state.HatchSession or state.Hopping or state.WorldSwitching or state.WorldMismatch then
         return false
     end
     local now = os.clock()
@@ -326,7 +326,7 @@ end
 
 function QuestFarm.FarmTick(state)
     if not state.Enabled or not Config.AutoFarm then return end
-    if state.WorldSwitching or state.WorldMismatch or state.Hopping or state.HatchSession or state.SlotBuying then return end
+    if state.InitialSetupDone == false or state.SlotBuying or state.WorldSwitching or state.WorldMismatch or state.Hopping or state.HatchSession then return end
 
     QuestFarm.EnsureInBestZone(state)
     local zoneId = QuestFarm.BestZoneId()

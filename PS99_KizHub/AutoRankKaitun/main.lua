@@ -162,6 +162,8 @@ local State = {
     Queued = false,
     Rank11WebhookSent = false,
     StarterPetsPicked = false,
+    InitialSetupDone = false,
+    SlotBuying = false,
     LastStarterPetCheckAt = 0,
     LastSlotPurchaseAt = 0,
     NextClaimGiftsAt = 0,
@@ -170,20 +172,22 @@ local State = {
 
 -- 4. Khởi tạo liên kết các module con
 local autoRankDeps = {
-    Modules          = Modules,
-    Network          = Network,
-    Config           = Config,
-    RankData         = RankData,
-    Webhook          = Webhook,
-    BestZone         = QuestFarm.BestZone,
-    BestZoneId       = QuestFarm.BestZoneId,
-    BestZoneName     = QuestFarm.BestZoneName,
-    CurrentWorld     = QuestFarm.CurrentWorld,
-    EnsureInBestZone = QuestFarm.EnsureInBestZone,
-    BestEgg          = QuestHatch.BestEgg,
-    MaxHatch         = QuestHatch.MaxHatch,
-    HatchAmount      = QuestHatch.HatchAmount,
-    CanHatchEgg      = QuestHatch.CanHatchEgg,
+    Modules             = Modules,
+    Network             = Network,
+    Config              = Config,
+    RankData            = RankData,
+    Webhook             = Webhook,
+    BestZone            = QuestFarm.BestZone,
+    BestZoneId          = QuestFarm.BestZoneId,
+    BestZoneName        = QuestFarm.BestZoneName,
+    CurrentWorld        = QuestFarm.CurrentWorld,
+    EnsureInBestZone    = QuestFarm.EnsureInBestZone,
+    ZoneArrivalPosition = QuestFarm.ZoneArrivalPosition,
+    BestEgg             = QuestHatch.BestEgg,
+    MaxHatch            = QuestHatch.MaxHatch,
+    HatchAmount         = QuestHatch.HatchAmount,
+    CanHatchEgg         = QuestHatch.CanHatchEgg,
+    PerformSlotPurchase = function(state) return Progression.performSlotPurchaseTrip(state) end,
 }
 
 QuestFarm.init(autoRankDeps)
@@ -348,9 +352,11 @@ local function StartThreads()
         QuestItems.EventTick(State)
     end, function() return Config.EventTick or 3.0 end)
 
-    -- Tự chọn starter pets cho acc mới: Chạy luồng độc lập, khi xong hoặc acc đã có pet là HỦY LUỒNG VĨNH VIỄN
+    -- Quy trình đầu game: Chọn Starter Pets -> Teleport đến 2 máy Spawn mua Slot -> Sau đó mới bắt đầu tới bãi farm
     task.spawn(function()
-        for attempt = 1, 10 do
+        task.wait(1.2)
+        -- 1. Chọn starter pets nếu tài khoản mới
+        for attempt = 1, 6 do
             if not State.Alive or State.StarterPetsPicked then break end
             local done = false
             pcall(function()
@@ -360,16 +366,32 @@ local function StartThreads()
                 State.StarterPetsPicked = true
                 break
             end
-            task.wait(2.5)
+            task.wait(2.0)
         end
         State.StarterPetsPicked = true
+        task.wait(0.5)
+
+        -- 2. ĐẦU GAME VÔ: Teleport đến 2 máy Spawn mua slot pet & egg trước khi farm
+        if Config.AutoOpenSlots ~= false then
+            pcall(function()
+                Progression.performSlotPurchaseTrip(State)
+            end)
+        end
+
+        -- 3. Đánh dấu đã hoàn thành setup đầu game, bắt đầu tele ra bãi farm
+        State.InitialSetupDone = true
+        pcall(function()
+            QuestFarm.EnsureInBestZone(State)
+        end)
     end)
 
-    -- Tự động mua slot pet và egg
+    -- Tự động kiểm tra mua slot pet và egg định kỳ (15s)
     if Config.AutoOpenSlots ~= false then
         SpawnLoop("open slots", function()
-            Progression.autoOpenSlots(State)
-        end, 1)
+            if State.InitialSetupDone then
+                Progression.autoOpenSlots(State)
+            end
+        end, 15)
     end
 
     -- Tự nhận Free Gifts 12 mốc (60.0s)

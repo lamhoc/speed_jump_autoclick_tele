@@ -22,6 +22,7 @@ local BestEggFn = nil
 local MaxHatchFn = nil
 local HatchAmountFn = nil
 local CanHatchEggFn = nil
+local PerformSlotPurchaseFn = nil
 
 function RankController.init(deps)
     G = deps.Modules.G
@@ -36,6 +37,7 @@ function RankController.init(deps)
     MaxHatchFn = deps.MaxHatch
     HatchAmountFn = deps.HatchAmount
     CanHatchEggFn = deps.CanHatchEgg
+    PerformSlotPurchaseFn = deps.PerformSlotPurchase
 end
 
 function RankController.IsSupported(t)
@@ -491,8 +493,14 @@ function RankController.ControllerTick(state)
     local info = RankController.RankInfo()
     if info then
         state.Rank = info
-        if state.LastRank ~= nil and info.rankNumber ~= state.LastRank then
+        if state.LastRank ~= nil and info.rankNumber > state.LastRank then
             RankController.OnRankUp(info, state)
+            -- Mỗi khi lên 1 mức rank: Teleport đến 2 máy Spawn mua tiếp slot
+            if PerformSlotPurchaseFn and Config.AutoOpenSlots ~= false then
+                task.spawn(function()
+                    pcall(PerformSlotPurchaseFn, state)
+                end)
+            end
         end
         state.LastRank = info.rankNumber
     end
