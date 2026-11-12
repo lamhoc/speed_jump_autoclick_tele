@@ -213,7 +213,7 @@ end
 -- 4. Tự động mua Zone mới khi đủ điều kiện
 function Progression.HandleBlockedAndZones(info, state)
     if not Config.AutoBuyZones then return end
-    if state.WorldSwitching or state.Hopping or state.HatchSession or os.clock() - (state.LastZoneBuyAt or 0) < 2 then
+    if state.WorldSwitching or state.Hopping or os.clock() - (state.LastZoneBuyAt or 0) < 2 then
         return
     end
     if not Net.isfn(G.ZoneCmds, "GetNextZone") then return end
@@ -224,16 +224,39 @@ function Progression.HandleBlockedAndZones(info, state)
     if type(Zone) ~= "table" or type(ZoneId) ~= "string" then return end
 
     local cw = CurrentWorldFn and CurrentWorldFn() or 1
-    if Zone.WorldNumber ~= cw then return end
-    if Net.gval(G.ZoneCmds.HasCompletedNextZoneQuests) ~= true then return end
+    if Zone.WorldNumber ~= nil and Zone.WorldNumber ~= cw then return end
 
-    local Price = Net.gval(G.Balancing and G.Balancing.CalcGatePrice, Zone)
-    if type(Price) ~= "number" or not Zone.Currency or Net.gval(G.CurrencyCmds.CanAfford, Zone.Currency, Price) ~= true then
+    -- Kiểm tra nhiệm vụ cổng mở map nếu hàm tồn tại
+    if Net.isfn(G.ZoneCmds, "HasCompletedNextZoneQuests") then
+        local okQ, resQ = Net.gcall(G.ZoneCmds.HasCompletedNextZoneQuests, ZoneId)
+        if not okQ or resQ == nil then
+            okQ, resQ = Net.gcall(G.ZoneCmds.HasCompletedNextZoneQuests)
+        end
+        if okQ and resQ == false then
+            return
+        end
+    end
+
+    local Price = nil
+    if Net.isfn(G.Balancing, "CalcGatePrice") then
+        Price = Net.gval(G.Balancing.CalcGatePrice, Zone)
+    end
+    if type(Price) ~= "number" then
+        Price = tonumber(Zone.GatePrice or Zone.Price or Zone.Cost or 0)
+    end
+
+    local cur = Zone.Currency or "Coins"
+    local bal = Net.currency(cur)
+    if type(Price) == "number" and Price > 0 and bal < Price then
         return
     end
 
     state.LastZoneBuyAt = os.clock()
-    Net.netInvoke("Zones_RequestPurchase", ZoneId)
+    local ok, res, msg = Net.netInvoke("Zones_RequestPurchase", ZoneId)
+    if ok and res == true then
+        state.ZoneHatchDone = state.ZoneHatchDone or {}
+        state.ZoneHatchDone[ZoneId] = false -- Reset để map mới có cơ hội mở egg nếu đủ coin
+    end
 end
 
 return Progression

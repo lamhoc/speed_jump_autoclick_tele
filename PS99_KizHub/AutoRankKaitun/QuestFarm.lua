@@ -541,61 +541,7 @@ end
 function QuestFarm.CollectOrbsTick(state)
     if not state or not state.Alive or not state.Enabled then return end
 
-    -- 1. Hút Orbs & Lootbags vật lý trực tiếp trong workspace.__THINGS về nhân vật
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        local hrpCf = hrp.CFrame
-        local things = workspace:FindFirstChild("__THINGS")
-        if not things then return end
-
-        local orbsFolder = things:FindFirstChild("Orbs")
-        if orbsFolder then
-            for _, orb in ipairs(orbsFolder:GetChildren()) do
-                pcall(function()
-                    if orb:IsA("BasePart") then
-                        orb.CFrame = hrpCf
-                        if type(firetouchinterest) == "function" then
-                            firetouchinterest(hrp, orb, 0)
-                            firetouchinterest(hrp, orb, 1)
-                        end
-                    elseif orb:IsA("Model") then
-                        orb:PivotTo(hrpCf)
-                        local pp = orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart")
-                        if pp and type(firetouchinterest) == "function" then
-                            firetouchinterest(hrp, pp, 0)
-                            firetouchinterest(hrp, pp, 1)
-                        end
-                    end
-                end)
-            end
-        end
-
-        local lootbagsFolder = things:FindFirstChild("Lootbags")
-        if lootbagsFolder then
-            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
-                pcall(function()
-                    if bag:IsA("BasePart") then
-                        bag.CFrame = hrpCf
-                        if type(firetouchinterest) == "function" then
-                            firetouchinterest(hrp, bag, 0)
-                            firetouchinterest(hrp, bag, 1)
-                        end
-                    elseif bag:IsA("Model") then
-                        bag:PivotTo(hrpCf)
-                        local pp = bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart")
-                        if pp and type(firetouchinterest) == "function" then
-                            firetouchinterest(hrp, pp, 0)
-                            firetouchinterest(hrp, pp, 1)
-                        end
-                    end
-                end)
-            end
-        end
-    end)
-
-    -- 2. Kích hoạt logic thu thập client-side của OrbCmds nếu có
+    -- 1. Thu thập Orbs sạch thông qua client-side OrbCmds (không can thiệp CFrame vật lý tránh lỗi kẹt hạt quanh người)
     pcall(function()
         local map = QuestFarm.findOrbMap()
         if type(map) == "table" then
@@ -607,6 +553,31 @@ function QuestFarm.CollectOrbsTick(state)
                         pcall(orb.Collect, orb, nil, nil, true)
                     end
                 end
+            end
+        end
+    end)
+
+    -- 2. Hút Lootbags (túi quà rơi) về nhân vật
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local hrpPos = hrp.Position
+        local things = workspace:FindFirstChild("__THINGS")
+        if not things then return end
+
+        local lootbagsFolder = things:FindFirstChild("Lootbags")
+        if lootbagsFolder then
+            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
+                pcall(function()
+                    local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
+                    if part and (part.Position - hrpPos).Magnitude <= 100 then
+                        if type(firetouchinterest) == "function" then
+                            firetouchinterest(hrp, part, 0)
+                            firetouchinterest(hrp, part, 1)
+                        end
+                    end
+                end)
             end
         end
     end)

@@ -72,27 +72,16 @@ function EngineOptim.purgeHeavyVisuals()
     pcall(function()
         local things = workspace:FindFirstChild("__THINGS")
         if things then
-            local pets = things:FindFirstChild("Pets")
-            if pets then
-                for _, p in ipairs(pets:GetChildren()) do
-                    pcall(function() p:Destroy() end)
-                end
-            end
+            -- TUYỆT ĐỐI KHÔNG xóa folder Pets hoặc Highlight của Pets (tránh lỗi Infinite yield trên PetCmds và tự tháo pet)
+            -- TUYỆT ĐỐI KHÔNG xóa folder Orbs để tránh triệt tiêu ngọc trước khi bot hút kịp
             local dmg = things:FindFirstChild("DamageNumbers")
             if dmg then
                 for _, d in ipairs(dmg:GetChildren()) do
                     pcall(function() d:Destroy() end)
                 end
             end
-            -- Lưu ý: KHÔNG destroy folder Orbs ở đây để tránh triệt tiêu ngọc trước khi bot hút kịp
         end
-
-        local debris = workspace:FindFirstChild("__DEBRIS")
-        if debris then
-            for _, deb in ipairs(debris:GetChildren()) do
-                pcall(function() deb:Destroy() end)
-            end
-        end
+        -- Không can thiệp __DEBRIS tránh xung đột locked parent với ArrowPointer3D
     end)
 end
 
