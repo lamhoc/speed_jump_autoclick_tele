@@ -252,7 +252,7 @@ local function clickBuyButtonsInGui(filterKeyword)
                     or (filterKeyword and gName:find(filterKeyword))
                 if isMachineGui then
                     for _, btn in ipairs(gui:GetDescendants()) do
-                        if (btn:IsA("TextButton") or btn:IsA("ImageButton") or btn:IsA("GuiButton")) and btn.Visible and btn.Active then
+                        if (btn:IsA("TextButton") or btn:IsA("ImageButton") or btn:IsA("GuiButton")) and btn.Visible then
                             local bName = btn.Name:lower()
                             local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
                             
@@ -280,6 +280,42 @@ local function clickBuyButtonsInGui(filterKeyword)
     return clicked
 end
 
+local function detectNextTierFromGui(filterKeyword)
+    local nextTier = nil
+    pcall(function()
+        local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if not pgui then return end
+
+        local ownedCount = 0
+        local foundMachineGui = false
+
+        for _, gui in ipairs(pgui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                local gName = gui.Name:lower()
+                local isMachineGui = gName:find("slot") or gName:find("machine") or gName:find("upgrade")
+                    or gName:find("equip") or gName:find("pet") or gName:find("egg")
+                    or (filterKeyword and gName:find(filterKeyword))
+                if isMachineGui then
+                    foundMachineGui = true
+                    for _, desc in ipairs(gui:GetDescendants()) do
+                        if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                            local t = desc.Text:lower()
+                            if t:find("posséd") or t:find("owned") then
+                                ownedCount = ownedCount + 1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if foundMachineGui and ownedCount > 0 then
+            nextTier = ownedCount + 1
+        end
+    end)
+    return nextTier
+end
+
 local function closeAnyMachinePopup()
     pcall(function()
         local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -303,20 +339,20 @@ local function closeAnyMachinePopup()
     end)
 end
 
-local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUpgrade)
+local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUpgrade, state, tierKey)
     local mach = findMachineModel(machName)
     local cf = getMachineStandCFrame(mach, machName)
     local hrp = Net.hrp()
     if not hrp then return false end
 
-    -- Teleport tới trước mặt máy
+    -- 1. Teleport tới trước mặt máy
     if cf then
         hrp.CFrame = cf
         pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
         task.wait(0.5)
     end
 
-    -- Kích hoạt tương tác máy
+    -- 2. Kích hoạt tương tác máy
     pcall(function()
         Net.netFire("Machines: Mark Approached", machName)
         if machName:find("Equip") then
@@ -352,41 +388,58 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     end)
     task.wait(0.4)
 
-    -- Mua tối đa 15 lần
+    -- 3. Mua slot theo đúng tier chuẩn: RemoteFunction:InvokeServer(tier)
     local anyBought = false
+    local currentTier = detectNextTierFromGui(filterKeyword) or (state and tierKey and state[tierKey]) or 1
+
     for _ = 1, 15 do
         local gems = Net.currency("Diamonds")
         if gems < 25 then break end
 
-        local bought = false
-        -- 1. Click nút trực tiếp trên UI
-        local clicked = clickBuyButtonsInGui(filterKeyword)
-        if clicked then bought = true end
+        -- Thử gọi trực tiếp InvokeServer với currentTier
+        local ok, res = Net.netInvoke(remoteName, currentTier)
+        print(string.format("[KizHub Slot] %s tier %d -> ok: %s, res: %s", remoteName, currentTier, tostring(ok), tostring(res)))
 
-        -- 2. Gọi RemoteFunction của máy
-        local ok, res = Net.netInvoke(remoteName)
-        if ok and res ~= false then bought = true end
-
-        if not bought then
-            local ok2, res2 = Net.netInvoke(remoteName, 1)
-            if ok2 and res2 ~= false then bought = true end
-        end
-
-        -- 3. Fallback Upgrades_Purchase
-        if not bought and fallbackUpgrade then
-            local okFb, resFb = Net.netInvoke("Upgrades_Purchase", fallbackUpgrade)
-            if okFb and resFb ~= false then bought = true end
-        end
-
-        if bought then
+        if ok and res ~= false then
             anyBought = true
+            currentTier = currentTier + 1
+            if state and tierKey then
+                state[tierKey] = currentTier
+            end
             task.wait(0.25)
         else
-            break
+            -- Thử fallback click UI trực tiếp
+            local clicked = clickBuyButtonsInGui(filterKeyword)
+            if clicked then
+                task.wait(0.35)
+                local detected = detectNextTierFromGui(filterKeyword)
+                if detected and detected > currentTier then
+                    currentTier = detected
+                    if state and tierKey then
+                        state[tierKey] = currentTier
+                    end
+                    anyBought = true
+                else
+                    break
+                end
+            else
+                -- Fallback cuối cùng Upgrades_Purchase nếu có
+                if fallbackUpgrade then
+                    local okFb, resFb = Net.netInvoke("Upgrades_Purchase", fallbackUpgrade)
+                    if okFb and resFb ~= false then
+                        anyBought = true
+                        task.wait(0.25)
+                    else
+                        break
+                    end
+                else
+                    break
+                end
+            end
         end
     end
 
-    -- Đóng giao diện UI máy
+    -- 4. Đóng giao diện UI máy
     closeAnyMachinePopup()
     task.wait(0.3)
     return anyBought
@@ -409,13 +462,13 @@ function Progression.performSlotPurchaseTrip(state)
 
     -- 1. Teleport tới EquipSlotsMachine (Slot Pet) và mua
     pcall(function()
-        buySlotsAtMachine("EquipSlotsMachine", "equip", "EquipSlotsMachine_RequestPurchase", "PetSlots")
+        buySlotsAtMachine("EquipSlotsMachine", "equip", "EquipSlotsMachine_RequestPurchase", "PetSlots", state, "CurrentPetSlotTier")
     end)
     task.wait(0.3)
 
     -- 2. Teleport tới EggHatchSlotsMachine (Slot Trứng) và mua
     pcall(function()
-        buySlotsAtMachine("EggHatchSlotsMachine", "egg", "EggHatchSlotsMachine_RequestPurchase", "EggSlots")
+        buySlotsAtMachine("EggHatchSlotsMachine", "egg", "EggHatchSlotsMachine_RequestPurchase", "EggSlots", state, "CurrentEggSlotTier")
     end)
     task.wait(0.3)
 
