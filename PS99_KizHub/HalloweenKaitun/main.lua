@@ -305,6 +305,7 @@ local ui = DashboardGui.create({
     Subtitle = "Black Screen: the 3D world is not drawn, the script keeps playing",
     Discord = "discord.gg/pornhub",
     Blackout = true,
+    Mode = "Halloween",
 })
 
 local function updateKizhubGui()
@@ -324,33 +325,79 @@ local function updateKizhubGui()
             local zInfo = K.ZONES[z]
             ui.ZoneLabel.Text = string.format("Zone %d of 8 • %s • %d hatched", z, zInfo and zInfo.Name or "...", state.totalEggsHatched or 0)
         end
-        if ui.TreatsLabel then
-            local deltaT = math.max(0, t - (state.sessionStartTreats or t))
-            ui.TreatsLabel.Text = string.format("Treats: %s (+%s this session)", Network.shorten(t), Network.shorten(deltaT))
+
+        -- Cập nhật tiến độ & nguyên liệu thiếu của Combine Egg
+        local prog = nil
+        if type(CombineHuge.getCombineProgress) == "function" then
+            prog = CombineHuge.getCombineProgress()
         end
+
+        if ui.CombineLabel then
+            local statusTxt = (prog and prog.statusText) or (type(CombineHuge.getCombineStatusText) == "function" and CombineHuge.getCombineStatusText()) or "Chờ nguyên liệu"
+            ui.CombineLabel.Text = "🔮 Combine Egg: " .. statusTxt
+        end
+
         if ui.CoinsLabel then
             local deltaC = math.max(0, c - (state.sessionStartCoins or c))
             ui.CoinsLabel.Text = string.format("Candy Coins: %s (+%s this session)", Network.shorten(c), Network.shorten(deltaC))
         end
-        if ui.CombineLabel then
-            local now = os.clock()
-            if (now - (state.lastCombineUiUpdate or 0) >= 3) and (state.excursion == nil) then
-                state.lastCombineUiUpdate = now
-                if type(CombineHuge.getCombineStatusText) == "function" then
-                    local freshStatus = CombineHuge.getCombineStatusText()
-                    if freshStatus and freshStatus ~= "" then
-                        state.combineStatus = freshStatus
-                    end
-                end
-            end
-            ui.CombineLabel.Text = "Combine Egg: " .. (state.combineStatus or "Rảnh")
-        end
+
         if ui.MailLabel then
             ui.MailLabel.Text = string.format("Hatched: %d   Mail: %s   Daycare: %s", state.totalEggsHatched or 0, tostring(state.mailStatus or "Rảnh"), tostring(state.daycareStatus or "Rảnh"))
         end
+
         if ui.DetailBox then
             local act = state.excursion or (state.currentZoneNumber == 8 and "Mở trứng liên tục Zone 8..." or string.format("Farm bãi & mở trứng Zone %d...", state.currentZoneNumber or 1))
             ui.DetailBox.Text = "Doing: " .. tostring(act)
+        end
+
+        -- Hiển thị chi tiết thanh tiến độ nguyên liệu Combine Egg trong QuestRows
+        if ui.QuestRows and prog then
+            -- Hàng 1: Masquerade Agony
+            local r1 = ui.QuestRows[1]
+            if r1 then
+                r1.Row.Visible = true
+                r1.Stars.Text = "[🔮 Agony]"
+                r1.Stars.TextColor3 = Color3.fromRGB(192, 132, 252)
+                r1.Name.Text = "Masquerade Agony"
+                local ready1 = prog.missingAgony == 0
+                r1.ProgText.Text = string.format("%d / %d (%.0f%%) • %s", prog.haveAgony, prog.needAgony, prog.pctAgony * 100, ready1 and "ĐỦ" or ("Thiếu " .. prog.missingAgony))
+                r1.ProgText.TextColor3 = ready1 and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(248, 113, 113)
+                r1.BarFill.Size = UDim2.new(prog.pctAgony, 0, 1, 0)
+                r1.BarFill.BackgroundColor3 = ready1 and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(168, 85, 247)
+            end
+
+            -- Hàng 2: Halloween Shards
+            local r2 = ui.QuestRows[2]
+            if r2 then
+                r2.Row.Visible = true
+                r2.Stars.Text = "[⚡ Shard]"
+                r2.Stars.TextColor3 = Color3.fromRGB(250, 204, 21)
+                r2.Name.Text = "Halloween Shards"
+                local ready2 = prog.missingShard == 0
+                r2.ProgText.Text = string.format("%d / %d (%.0f%%) • %s", prog.haveShard, prog.needShard, prog.pctShard * 100, ready2 and "ĐỦ" or ("Thiếu " .. prog.missingShard))
+                r2.ProgText.TextColor3 = ready2 and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(248, 113, 113)
+                r2.BarFill.Size = UDim2.new(prog.pctShard, 0, 1, 0)
+                r2.BarFill.BackgroundColor3 = ready2 and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(250, 204, 21)
+            end
+
+            -- Hàng 3: Trạng thái ghép Combine Egg
+            local r3 = ui.QuestRows[3]
+            if r3 then
+                r3.Row.Visible = true
+                r3.Stars.Text = "[👑 Craft]"
+                r3.Stars.TextColor3 = prog.isReady and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(251, 146, 60)
+                r3.Name.Text = "Combine Huge Egg Status"
+                r3.ProgText.Text = prog.craftingRem and string.format("Đang ghép (%ds)", prog.craftingRem) or (prog.isReady and "SẴN SÀNG GHÉP!" or string.format("CHỜ ĐỦ NGUYÊN LIỆU (%.0f%%)", prog.overallPct * 100))
+                r3.ProgText.TextColor3 = prog.isReady and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(251, 146, 60)
+                r3.BarFill.Size = UDim2.new(prog.overallPct, 0, 1, 0)
+                r3.BarFill.BackgroundColor3 = prog.isReady and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(56, 189, 248)
+            end
+
+            local r4 = ui.QuestRows[4]
+            if r4 then
+                r4.Row.Visible = false
+            end
         end
     end)
 end
@@ -474,11 +521,11 @@ task.spawn(function()
     end
 end)
 
--- Vòng lặp cập nhật GUI KizCard (4s)
+-- Vòng lặp cập nhật GUI KizCard (2.5s)
 task.spawn(function()
     while state.alive do
         pcall(updateKizhubGui)
-        task.wait(4)
+        task.wait(2.5)
     end
 end)
 

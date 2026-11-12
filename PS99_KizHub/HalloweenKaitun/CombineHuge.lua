@@ -103,11 +103,57 @@ function CombineHuge.ingredientNeed(dir, ing)
     return need
 end
 
+local function countItemFromSave(itemNameKeyword)
+    local kw = string.lower(tostring(itemNameKeyword or ""))
+    local total = 0
+    pcall(function()
+        local s = Net.getSave()
+        if not (s and s.Inventory) then return end
+
+        if type(s.Inventory.Pet) == "table" then
+            for _, p in pairs(s.Inventory.Pet) do
+                if type(p) == "table" and type(p.id) == "string" and string.find(string.lower(p.id), kw, 1, true) then
+                    total = total + (tonumber(p._am) or 1)
+                end
+            end
+        end
+
+        if type(s.Inventory.Misc) == "table" then
+            for _, m in pairs(s.Inventory.Misc) do
+                if type(m) == "table" and type(m.id) == "string" and string.find(string.lower(m.id), kw, 1, true) then
+                    total = total + (tonumber(m._am) or 1)
+                end
+            end
+        end
+
+        if type(s.Inventory.Currency) == "table" then
+            for _, c in pairs(s.Inventory.Currency) do
+                if type(c) == "table" and type(c.id) == "string" and string.find(string.lower(c.id), kw, 1, true) then
+                    total = total + (tonumber(c._am) or 1)
+                end
+            end
+        end
+
+        if type(s.Inventory.Item) == "table" then
+            for _, it in pairs(s.Inventory.Item) do
+                if type(it) == "table" and type(it.id) == "string" and string.find(string.lower(it.id), kw, 1, true) then
+                    total = total + (tonumber(it._am) or 1)
+                end
+            end
+        end
+    end)
+    return total
+end
+
+function CombineHuge.countItemFromSave(itemNameKeyword)
+    return countItemFromSave(itemNameKeyword)
+end
+
 function CombineHuge.ingredientHave(dir, ing)
     local okC, have = Net.gcall(function()
         local item = ing.Item:Clone()
         local n = item:CountAny()
-        if dir.AnyVariantInputs and item:IsA("Pet") then
+        if dir and dir.AnyVariantInputs and item:IsA("Pet") then
             for _, v in ipairs({ "Golden", "Rainbow" }) do
                 local c = item:Clone()
                 if c["CanBe" .. v](c) then
@@ -129,7 +175,25 @@ function CombineHuge.ingredientHave(dir, ing)
         end
         return n
     end)
-    return okC and tonumber(have) or 0
+    local val = (okC and tonumber(have)) or 0
+    if val <= 0 and ing and ing.Item then
+        local rawId = ""
+        pcall(function()
+            if type(ing.Item.GetId) == "function" then
+                rawId = tostring(ing.Item:GetId() or "")
+            elseif ing.Item.Id then
+                rawId = tostring(ing.Item.Id)
+            else
+                rawId = tostring(ing.Item)
+            end
+        end)
+        if rawId:find("Agony") then
+            val = countItemFromSave("Agony")
+        elseif rawId:find("Shard") then
+            val = countItemFromSave("Shard")
+        end
+    end
+    return val
 end
 
 function CombineHuge.combineRecipes()
@@ -175,6 +239,7 @@ function CombineHuge.combineRecipes()
                 name = name,
                 open = open,
                 ready = ready,
+                recipe = r,
                 missing = table.concat(missing, ", "),
                 summary = table.concat(summary, ", "),
                 duration = tonumber(CombineHuge.flagValue(r.DurationFFlag)) or tonumber(r.Duration)
@@ -184,56 +249,119 @@ function CombineHuge.combineRecipes()
     return out, dir
 end
 
--- Lấy văn bản chi tiết nguyên liệu còn thiếu cho GUI
-function CombineHuge.getCombineStatusText()
-    local recipes, dir = CombineHuge.combineRecipes()
-    if not dir or #recipes == 0 then
-        return "Chưa nạp công thức máy"
-    end
+-- Lấy cấu trúc chi tiết nguyên liệu và tiến độ ghép Combine Egg
+function CombineHuge.getCombineProgress()
+    local cfg = getConfig()
+    local targetAgony = (cfg.CombineIngredients and cfg.CombineIngredients.Agony) or 10
+    local targetShard = (cfg.CombineIngredients and cfg.CombineIngredients.Shard) or 300
 
-    local q = CombineHuge.activeQueues()
-    for _, item in pairs(q) do
-        if type(item) == "table" then
-            local rem = tonumber(item.Remaining) or tonumber(item.TimeLeft) or 0
-            if rem > 0 then
-                return string.format("Đang ghép (%ds)", math.floor(rem))
+    -- 1. Quét số lượng từ Save làm baseline
+    local haveAgony = countItemFromSave("Agony")
+    local haveShard = countItemFromSave("Shard")
+
+    -- 2. Nếu có công thức máy game, đồng bộ theo công thức
+    local recipes, dir = CombineHuge.combineRecipes()
+    if dir and type(recipes) == "table" and #recipes > 0 then
+        local target = nil
+        for _, r in ipairs(recipes) do
+            if r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg") then
+                target = r
+                break
             end
         end
-    end
+        if not target and #recipes > 0 then target = recipes[1] end
 
-    local target = nil
-    for _, r in ipairs(recipes) do
-        if r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg") then
-            target = r
-            break
-        end
-    end
-    if not target and #recipes > 0 then
-        target = recipes[1]
-    end
-
-    if target then
-        if target.ready then
-            return "Sẵn sàng mở (" .. target.summary .. ")"
-        elseif target.missing and target.missing ~= "" then
-            local readyParts = {}
-            for item in string.gmatch(target.summary or "", "[^,]+") do
-                local trimmed = item:gsub("^%s*(.-)%s*$", "%1")
-                if trimmed ~= "" and not target.missing:find(trimmed, 1, true) then
-                    table.insert(readyParts, trimmed)
+        if target and target.recipe and type(target.recipe.Ingredients) == "table" then
+            for _, ing in ipairs(target.recipe.Ingredients) do
+                local need = CombineHuge.ingredientNeed(dir, ing)
+                local have = CombineHuge.ingredientHave(dir, ing)
+                local rawId = ""
+                pcall(function()
+                    if type(ing.Item.GetId) == "function" then rawId = tostring(ing.Item:GetId() or "") end
+                end)
+                if rawId:find("Agony") then
+                    targetAgony = need
+                    if have > 0 or haveAgony == 0 then haveAgony = have end
+                elseif rawId:find("Shard") then
+                    targetShard = need
+                    if have > 0 or haveShard == 0 then haveShard = have end
                 end
             end
-            if #readyParts > 0 then
-                return string.format("Thiếu: %s (Đủ %s)", target.missing, table.concat(readyParts, ", "))
-            else
-                return "Thiếu: " .. target.missing
-            end
-        elseif target.summary and target.summary ~= "" then
-            return "Thiếu: " .. target.summary
         end
     end
 
-    return "Chờ nguyên liệu"
+    -- 3. Kiểm tra xem có mẻ đang ghép trong hàng đợi không
+    local craftingRem = nil
+    pcall(function()
+        local q = CombineHuge.activeQueues()
+        for _, item in pairs(q or {}) do
+            if type(item) == "table" then
+                local rem = tonumber(item.Remaining) or tonumber(item.TimeLeft) or 0
+                if rem > 0 then
+                    craftingRem = math.floor(rem)
+                    break
+                end
+            end
+        end
+    end)
+
+    local missingAgony = math.max(0, targetAgony - haveAgony)
+    local missingShard = math.max(0, targetShard - haveShard)
+    local isReady = (missingAgony == 0 and missingShard == 0)
+
+    local statusText = ""
+    if craftingRem then
+        statusText = string.format("Đang ghép (%ds)", craftingRem)
+    elseif isReady then
+        statusText = string.format("Sẵn sàng mở! (Agony %d/%d, Shard %d/%d)", haveAgony, targetAgony, haveShard, targetShard)
+    else
+        local missList = {}
+        if missingAgony > 0 then
+            table.insert(missList, string.format("Agony %d/%d (thiếu %d)", haveAgony, targetAgony, missingAgony))
+        end
+        if missingShard > 0 then
+            table.insert(missList, string.format("Shard %d/%d (thiếu %d)", haveShard, targetShard, missingShard))
+        end
+
+        local readyList = {}
+        if missingAgony == 0 then
+            table.insert(readyList, string.format("Đủ Agony %d/%d", haveAgony, targetAgony))
+        end
+        if missingShard == 0 then
+            table.insert(readyList, string.format("Đủ Shard %d/%d", haveShard, targetShard))
+        end
+
+        if #readyList > 0 then
+            statusText = string.format("Thiếu %s (%s)", table.concat(missList, ", "), table.concat(readyList, ", "))
+        else
+            statusText = string.format("Thiếu %s", table.concat(missList, ", "))
+        end
+    end
+
+    local pctAgony = math.clamp(haveAgony / math.max(1, targetAgony), 0, 1)
+    local pctShard = math.clamp(haveShard / math.max(1, targetShard), 0, 1)
+    local overallPct = (pctAgony + pctShard) / 2
+
+    return {
+        isReady = isReady,
+        craftingRem = craftingRem,
+        statusText = statusText,
+        haveAgony = haveAgony,
+        needAgony = targetAgony,
+        missingAgony = missingAgony,
+        pctAgony = pctAgony,
+        haveShard = haveShard,
+        needShard = targetShard,
+        missingShard = missingShard,
+        pctShard = pctShard,
+        overallPct = overallPct,
+    }
+end
+
+-- Lấy văn bản chi tiết nguyên liệu còn thiếu cho GUI
+function CombineHuge.getCombineStatusText()
+    local prog = CombineHuge.getCombineProgress()
+    return prog and prog.statusText or "Chờ nguyên liệu"
 end
 
 function CombineHuge.combineMachineStand()

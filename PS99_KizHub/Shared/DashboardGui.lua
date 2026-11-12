@@ -287,27 +287,52 @@ function DashboardGui.create(config)
         return lbl
     end
 
-    -- Dòng 1: Stars / Mục tiêu Rank
-    local StarsLabel = createInfoLine("StarsLabel", "⭐ Sao: 0 / 25 (0%)", 22, Color3.fromRGB(250, 204, 21))
-    uiElements.StarsLabel = StarsLabel
+    local isHalloween = (config and (config.Mode == "Halloween" or (config.BadgeTitle and string.find(config.BadgeTitle, "Halloween")))) == true
 
-    -- Dòng 2: Coins / Diamonds
-    local CoinsLabel = createInfoLine("CoinsLabel", "💰 Xu: 0  |  💎 Gems: 0", 42, Color3.fromRGB(203, 213, 225))
-    uiElements.CoinsLabel = CoinsLabel
-    uiElements.TotalsLabel = CoinsLabel
-    uiElements.TreatsLabel = CoinsLabel
+    if isHalloween then
+        -- Dòng 1: Combine Egg / Nguyên liệu còn thiếu (Dành riêng cho Kaitun Halloween)
+        local CombineLabel = createInfoLine("CombineLabel", "🔮 Combine Egg: Đang quét nguyên liệu...", 22, Color3.fromRGB(216, 180, 254))
+        uiElements.CombineLabel = CombineLabel
+        uiElements.StarsLabel = CombineLabel
 
-    -- Dòng 3: Hatched / Quests Done / Rewards
-    local StatsLabel = createInfoLine("StatsLabel", "🥚 Trứng: 0  |  🎁 Quà: 0/0  |  🔄 Rebirth: 0", 62, Color3.fromRGB(148, 163, 184))
-    uiElements.RankSubStats = StatsLabel
-    uiElements.MailLabel = StatsLabel
-    uiElements.CombineLabel = StatsLabel
-    uiElements.DaycareLabel = StatsLabel
+        -- Dòng 2: Candy Coins
+        local CoinsLabel = createInfoLine("CoinsLabel", "Candy Coins: 0 (+0 this session)", 42, Color3.fromRGB(203, 213, 225))
+        uiElements.CoinsLabel = CoinsLabel
+        uiElements.TotalsLabel = CoinsLabel
 
-    -- Dòng 4: Doing / Hành động hiện tại
-    local ActionLabel = createInfoLine("ActionLabel", "Doing: Farming bãi vỡ...", 82, Color3.fromRGB(56, 189, 248))
-    uiElements.ActionLabel = ActionLabel
-    uiElements.DetailBox = ActionLabel
+        -- Dòng 3: Hatched / Mail / Daycare (Tách độc lập khỏi CombineLabel để không bị đè chữ)
+        local StatsLabel = createInfoLine("StatsLabel", "Hatched: 0   Mail: Rảnh   Daycare: Đã tắt", 62, Color3.fromRGB(148, 163, 184))
+        uiElements.MailLabel = StatsLabel
+        uiElements.RankSubStats = StatsLabel
+        uiElements.DaycareLabel = StatsLabel
+
+        -- Dòng 4: Doing / Hành động hiện tại
+        local ActionLabel = createInfoLine("ActionLabel", "Doing: Mở trứng liên tục...", 82, Color3.fromRGB(56, 189, 248))
+        uiElements.ActionLabel = ActionLabel
+        uiElements.DetailBox = ActionLabel
+    else
+        -- Dòng 1: Stars / Mục tiêu Rank (GIỮ NGUYÊN 100% CHO AUTORANK - KHÔNG THAY ĐỔI)
+        local StarsLabel = createInfoLine("StarsLabel", "⭐ Sao: 0 / 25 (0%)", 22, Color3.fromRGB(250, 204, 21))
+        uiElements.StarsLabel = StarsLabel
+
+        -- Dòng 2: Coins / Diamonds
+        local CoinsLabel = createInfoLine("CoinsLabel", "💰 Xu: 0  |  💎 Gems: 0", 42, Color3.fromRGB(203, 213, 225))
+        uiElements.CoinsLabel = CoinsLabel
+        uiElements.TotalsLabel = CoinsLabel
+        uiElements.TreatsLabel = CoinsLabel
+
+        -- Dòng 3: Hatched / Quests Done / Rewards
+        local StatsLabel = createInfoLine("StatsLabel", "🥚 Trứng: 0  |  🎁 Quà: 0/0  |  🔄 Rebirth: 0", 62, Color3.fromRGB(148, 163, 184))
+        uiElements.RankSubStats = StatsLabel
+        uiElements.MailLabel = StatsLabel
+        uiElements.CombineLabel = StatsLabel
+        uiElements.DaycareLabel = StatsLabel
+
+        -- Dòng 4: Doing / Hành động hiện tại
+        local ActionLabel = createInfoLine("ActionLabel", "Doing: Farming bãi vỡ...", 82, Color3.fromRGB(56, 189, 248))
+        uiElements.ActionLabel = ActionLabel
+        uiElements.DetailBox = ActionLabel
+    end
 
     -- Khung 4 Nhiệm vụ Rank (Active Quests) kèm Progress Bar
     local QuestContainer = Instance.new("Frame", ContentFrame)
