@@ -321,6 +321,13 @@ function QuestHatch.HatchTick(state)
         state.Counters.Hatched = (state.Counters.Hatched or 0) + Amount
 
         local Plan = state.Plan or {}
+        if Plan.NewZoneSession and state.ZoneHatchProgress and type(state.ZoneHatchCurrent) == "string" then
+            local zp = state.ZoneHatchProgress[state.ZoneHatchCurrent]
+            if zp then
+                zp.Hatched = (zp.Hatched or 0) + Amount
+            end
+        end
+
         if Plan.HatchEggOnly and type(Plan.HatchRemaining) == "number" then
             Plan.HatchRemaining = Plan.HatchRemaining - Amount
             if Plan.HatchRemaining <= 0 then

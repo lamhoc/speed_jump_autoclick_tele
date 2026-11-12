@@ -435,31 +435,24 @@ function RankController.BuildPlan(state)
         end
     end
 
-    -- Logic NewZoneHatch: Tích lũy đủ thời lượng (5 phút = 300s) mở trứng tại map mới. Nếu thiếu coin sẽ farm bãi và tự động gọi lại mở tiếp
+    -- Logic NewZoneHatch: Mở đủ 30 trứng tại map mới. Nếu thiếu coin sẽ farm bãi và tự động gọi lại mở tiếp
     local currentZoneId = BestZoneIdFn and BestZoneIdFn() or nil
     local nzCfg = Config.NewZoneHatch
     if nzCfg and nzCfg.Enabled ~= false and currentZoneId and type(currentZoneId) == "string" then
         state.ZoneHatchDone = state.ZoneHatchDone or {}
         state.ZoneHatchProgress = state.ZoneHatchProgress or {}
-        local targetDuration = tonumber(nzCfg.Duration) or 300
+        local targetEggs = tonumber(nzCfg.TargetEggs) or 30
 
         if not state.ZoneHatchDone[currentZoneId] then
             local prog = state.ZoneHatchProgress[currentZoneId]
             if not prog then
-                prog = { TimeSpent = 0, LastActiveAt = 0 }
+                prog = { Hatched = 0 }
                 state.ZoneHatchProgress[currentZoneId] = prog
             end
+            state.ZoneHatchCurrent = currentZoneId
 
-            -- Cộng dồn thời gian mở trứng khi bot đang thực sự đứng mở trứng
-            local isCurrentlyHatching = (state.HatchSession == true)
-            if isCurrentlyHatching and prog.LastActiveAt > 0 then
-                local dt = math.clamp(os.clock() - prog.LastActiveAt, 0, 3)
-                prog.TimeSpent = prog.TimeSpent + dt
-            end
-            prog.LastActiveAt = os.clock()
-
-            local remainingSec = math.max(0, math.ceil(targetDuration - prog.TimeSpent))
-            if remainingSec <= 0 then
+            local hatchedCount = tonumber(prog.Hatched) or 0
+            if hatchedCount >= targetEggs then
                 state.ZoneHatchDone[currentZoneId] = true
                 state.NewZoneHatchSession = nil
             else
@@ -472,19 +465,19 @@ function RankController.BuildPlan(state)
                 end
                 local bal = Net.currency(cur)
 
-                -- Điều kiện đủ tiền: Đang mở thì chỉ cần >= 1 quả; Nếu đang farm bãi quay lại thì gom đủ ít nhất 3 quả
-                local minCoinsRequired = isCurrentlyHatching and unitPrice or (unitPrice * 3)
+                local remainingEggs = math.max(0, targetEggs - hatchedCount)
+                local minCoinsRequired = (state.HatchSession == true) and unitPrice or (unitPrice * 3)
                 local canAfford = (unitPrice > 0 and bal >= minCoinsRequired) or (unitPrice == 0 and bal > 0)
 
                 if canAfford then
                     Plan.Hatch = true
                     Plan.HatchEggOnly = true
                     Plan.NewZoneSession = true
-                    table.insert(Plan.HatchReasons, string.format("New Zone Egg (%ds left)", remainingSec))
-                    parts[#parts + 1] = string.format("Hatching New Zone %s (%ds/%ds)", currentZoneId, math.floor(prog.TimeSpent), targetDuration)
+                    table.insert(Plan.HatchReasons, string.format("New Zone Eggs (%d/%d)", hatchedCount, targetEggs))
+                    parts[#parts + 1] = string.format("Hatching New Zone %s (%d/%d eggs)", currentZoneId, hatchedCount, targetEggs)
                 else
-                    -- Không đủ coin: Tạm dừng mở trứng, bot tự động farm bãi gom coin rồi quay lại mở tiếp cho đủ 5 phút
-                    parts[#parts + 1] = string.format("Farm coin chờ mở egg (%ds/%ds) [%s/%s %s]", math.floor(prog.TimeSpent), targetDuration, Net.shorten(bal), Net.shorten(minCoinsRequired), cur)
+                    -- Không đủ coin: Tạm dừng mở trứng, bot tự động farm bãi gom coin rồi quay lại mở tiếp cho đủ 30 trứng
+                    parts[#parts + 1] = string.format("Farm coin chờ mở trứng (%d/%d eggs) [%s/%s %s]", hatchedCount, targetEggs, Net.shorten(bal), Net.shorten(minCoinsRequired), cur)
                 end
             end
         end

@@ -483,7 +483,7 @@ function QuestFarm.installMaxPetSpeed(state)
     end)
 end
 
--- ================= 3. ORB COLLECTOR (TỰ ĐỘNG HÚT NGỌC/ORBS/LOOTBAGS) =================
+-- ================= 3. ORB & LOOTBAG COLLECTOR (CHUẨN HOOK ORB STUB THEO CODE DJ CUNG CẤP) =================
 local isOrbHooked = false
 function QuestFarm.installOrbHook()
     if isOrbHooked then return end
@@ -491,183 +491,118 @@ function QuestFarm.installOrbHook()
         for attempt = 1, 30 do
             local hooked = false
             pcall(function()
-                local RS = game:GetService("ReplicatedStorage")
-                local orbModule = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds") and RS.Library.Client.OrbCmds:FindFirstChild("Orb")
-                if orbModule then
-                    local Orb = require(orbModule)
-                    if type(Orb) == "table" and type(Orb.new) == "function" then
-                        local origNew = Orb.new
-                        Orb.new = function(...)
-                            local orb = origNew(...)
-                            if type(orb) == "table" then
-                                task.defer(function()
-                                    task.wait(tonumber(orb._pickupDelay) or 0.1)
-                                    pcall(orb.Collect, orb, nil, nil, true)
-                                end)
-                            end
-                            return orb
-                        end
-                        hooked = true
-                        isOrbHooked = true
+                local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                local Library = ReplicatedStorage:WaitForChild("Library", 5)
+                if not Library then return end
+
+                local function requireModule(path)
+                    local current = Library
+                    for part in string.gmatch(path, "[^%.]+") do
+                        current = current:WaitForChild(part, 3)
+                        if not current then return nil end
                     end
+                    local ok, result = pcall(require, current)
+                    return ok and result or nil
+                end
+
+                local Orb = requireModule("Client.OrbCmds.Orb")
+                requireModule("Client.OrbCmds")
+
+                if type(Orb) == "table" and not rawget(Orb, "__mineStub") then
+                    local setreadonly_ = setreadonly or makewriteable or (getgenv and getgenv().setreadonly)
+                    if type(setreadonly_) == "function" then
+                        pcall(setreadonly_, Orb, false)
+                    end
+
+                    local fakeOrbMethods = {
+                        RenderStepped = function(arg)
+                            if arg._destroyed then
+                                return false
+                            end
+                            arg._collected = true
+                            return false
+                        end,
+                        Destroy = function(arg)
+                            arg._destroyed = true
+                        end,
+                        RenderParticles = function()
+                        end,
+                        Combine = function()
+                            return false
+                        end,
+                    }
+
+                    local fakeOrbMeta = {
+                        __index = fakeOrbMethods,
+                        index = fakeOrbMethods,
+                    }
+
+                    Orb.new = function(arg)
+                        return setmetatable({ 
+                            _id = arg, 
+                            _destroyed = false, 
+                            _collected = false, 
+                            combinedIds = {} 
+                        }, fakeOrbMeta)
+                    end
+
+                    rawset(Orb, "__mineStub", true)
+
+                    if type(setreadonly_) == "function" then
+                        pcall(setreadonly_, Orb, true)
+                    end
+                    hooked = true
+                    isOrbHooked = true
                 end
             end)
-            if hooked then break end
+            if hooked or isOrbHooked then break end
             task.wait(1.0)
         end
     end)
 end
 
-local orbMapCache = nil
-function QuestFarm.findOrbMap()
-    if type(orbMapCache) == "table" then return orbMapCache end
-    local ok, map = pcall(function()
-        local RS = game:GetService("ReplicatedStorage")
-        local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds")
-        if not mod then return nil end
-
-        local fn = nil
-        if type(getsenv) == "function" then
-            local env = getsenv(mod)
-            if type(env) == "table" then
-                fn = env.ProcessCreate or env.Create or env.Spawn or env.Collect
-            end
-        end
-
-        if type(fn) ~= "function" and type(getgc) == "function" then
-            for _, f in ipairs(getgc(false)) do
-                if type(f) == "function" then
-                    local n = debug.info(f, "n")
-                    if n == "ProcessCreate" or n == "Create" or n == "Collect" then
-                        fn = f
-                        break
-                    end
-                end
-            end
-        end
-
-        if type(fn) == "function" and type(debug.getupvalues) == "function" then
-            for _, up in pairs(debug.getupvalues(fn)) do
-                if type(up) == "table" then
-                    for _, v in pairs(up) do
-                        if type(v) == "table" and (type(v.Collect) == "function" or v._collected ~= nil or v._destroyed ~= nil) then
-                            return up
-                        end
-                    end
-                    local hasFunc = false
-                    for _, v in pairs(up) do
-                        if type(v) == "function" then hasFunc = true break end
-                    end
-                    if not hasFunc and next(up) ~= nil then
-                        return up
-                    end
-                end
-            end
-        end
-
-        if type(getgc) == "function" then
-            for _, t in ipairs(getgc(true)) do
-                if type(t) == "table" then
-                    for _, v in pairs(t) do
-                        if type(v) == "table" and type(v.Collect) == "function" and (v._collected ~= nil or v._destroyed ~= nil) then
-                            return t
-                        end
-                    end
-                end
-            end
-        end
-        return nil
-    end)
-    if ok and type(map) == "table" then
-        orbMapCache = map
-    end
-    return orbMapCache
-end
-
-local processedLootbags = {}
-
 function QuestFarm.CollectOrbsTick(state)
     if not state or not state.Alive or not state.Enabled then return end
 
-    -- 1. Thu thập Orbs client-side thông qua OrbCmds table (Nhanh, không lag, không lỗi visual)
+    -- 1. Tiêu hủy tức thì mọi BasePart / Model sinh ra trong workspace.__THINGS.Orbs (Đúng code dj cung cấp)
     pcall(function()
-        local map = QuestFarm.findOrbMap()
-        if type(map) == "table" then
-            local now = workspace:GetServerTimeNow()
-            for _, orb in pairs(map) do
-                if type(orb) == "table" and not orb._collected and not orb._destroyed and type(orb.Collect) == "function" then
-                    local age = now - (tonumber(orb._timestamp) or now)
-                    if age >= (tonumber(orb._pickupDelay) or 0) then
-                        pcall(orb.Collect, orb, nil, nil, true)
-                    end
+        local things = workspace:FindFirstChild("__THINGS")
+        local orbs = things and things:FindFirstChild("Orbs")
+        if orbs then
+            for _, child in ipairs(orbs:GetChildren()) do
+                if child:IsA("BasePart") or child:IsA("Model") then
+                    pcall(child.Destroy, child)
                 end
             end
         end
     end)
 
-    -- 2. Hút sạch Lootbags & Túi coin/gem (Thu thập 1 lần duy nhất rồi tự hủy, không gán lặp CFrame gây lỗi dính người)
+    -- 2. Hút Lootbags & Túi Coin / Gem rơi từ Breakables vào nhân vật
     pcall(function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
         local things = workspace:FindFirstChild("__THINGS")
-        if not things then return end
-        local pCf = hrp.CFrame
-        local hrpPos = hrp.Position
-        local hasTouch = (type(firetouchinterest) == "function")
-
-        -- Dọn sạch bất kỳ BillboardGui hoặc số sát thương rác bị dính vào nhân vật
-        for _, child in ipairs(char:GetChildren()) do
-            if child:IsA("BillboardGui") then
-                pcall(function() child:Destroy() end)
-            end
-        end
-
-        local lootbagsFolder = things:FindFirstChild("Lootbags")
-        if lootbagsFolder then
-            local now = os.clock()
-            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
-                if not processedLootbags[bag] then
-                    processedLootbags[bag] = now
-                    pcall(function()
-                        bag:PivotTo(pCf)
-                        local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
-                        if part and hasTouch then
-                            firetouchinterest(hrp, part, 0)
-                            firetouchinterest(hrp, part, 1)
-                        end
-                    end)
-                    task.delay(0.5, function()
-                        pcall(function()
-                            if bag and bag.Parent then
-                                bag:Destroy()
-                            end
-                        end)
-                    end)
-                end
-            end
-        end
-
-        -- 3. Quét sạch các hạt Orb bị dính chặt vào người do lỗi PivotTo trước đó (< 8 studs quanh người)
-        local orbsFolder = things:FindFirstChild("Orbs")
-        if orbsFolder then
-            for _, orb in ipairs(orbsFolder:GetChildren()) do
+        local lootbags = things and things:FindFirstChild("Lootbags")
+        if lootbags then
+            local pCf = hrp.CFrame
+            local hasTouch = (type(firetouchinterest) == "function")
+            for _, bag in ipairs(lootbags:GetChildren()) do
                 pcall(function()
-                    local part = orb:IsA("BasePart") and orb or (orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart"))
-                    if part and (part.Position - hrpPos).Magnitude <= 8 then
-                        orb:Destroy()
+                    bag:PivotTo(pCf)
+                    local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
+                    if part and hasTouch then
+                        firetouchinterest(hrp, part, 0)
+                        firetouchinterest(hrp, part, 1)
                     end
                 end)
             end
         end
 
-        -- 4. Dọn rác bảng processedLootbags định kỳ
-        if math.random(1, 40) == 1 then
-            local now = os.clock()
-            for b, t in pairs(processedLootbags) do
-                if now - t > 10 or not b.Parent then
-                    processedLootbags[b] = nil
-                end
+        -- Dọn sạch bất kỳ BillboardGui hoặc số sát thương rác bị dính vào nhân vật
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("BillboardGui") then
+                pcall(function() child:Destroy() end)
             end
         end
     end)

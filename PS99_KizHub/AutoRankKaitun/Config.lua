@@ -41,10 +41,10 @@ local Config = {
         ToyInterval = 180,
     },
 
-    -- [TÍNH NĂNG MỞ EGG 5 PHÚT TẠI MAP MỚI & TÍCH COIN CHỜ MAP TIẾP]
+    -- [TÍNH NĂNG MỞ ĐỦ 30 TRỨNG TẠI MAP MỚI & TÍCH COIN CHỜ MAP TIẾP]
     NewZoneHatch = {
         Enabled = true,
-        Duration = 300,           -- 5 phút (300 giây) tích lũy mở trứng tại map mới; nếu thiếu coin tự động farm bãi và quay lại mở tiếp
+        TargetEggs = 30,          -- Mở đủ 30 quả trứng tại map mới; nếu thiếu coin tự động farm bãi và quay lại mở tiếp
     },
 
     -- Tự động hóa tài khoản mới & Nâng cấp
