@@ -243,6 +243,7 @@ function QuestHatch.AffordableHatchAmount(Egg, Limit)
 end
 
 function QuestHatch.HatchTick(state)
+    if state.InitialSetupDone == false or state.SlotBuying then return end
     if not QuestHatch.HatchPlanned(state) then
         state.HatchSession = false
         return
