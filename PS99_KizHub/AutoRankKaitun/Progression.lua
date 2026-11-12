@@ -505,11 +505,49 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     return anyBought
 end
 
+-- Hàm xác định số thứ tự Zone cao nhất hiện tại (1..99)
+function Progression.CurrentZoneNumber()
+    if Net.isfn(G.InstanceZone, "GetMaximumOwnedZoneNumber") then
+        local n = Net.gval(G.InstanceZone.GetMaximumOwnedZoneNumber)
+        if type(n) == "number" and n > 0 then return n end
+    end
+    if Net.isfn(G.ZoneCmds, "GetMaxOwnedZone") then
+        local id = Net.gval(G.ZoneCmds.GetMaxOwnedZone)
+        if type(id) == "table" then id = id._id end
+        if type(id) == "string" then
+            local z = type(G.Zones) == "table" and G.Zones[id]
+            if z and type(z.ZoneNumber) == "number" then return z.ZoneNumber end
+            if z and type(z.Order) == "number" then return z.Order end
+            local num = tonumber(id:match("%d+"))
+            if num then return num end
+            if id == "Spawn" then return 1 end
+        end
+    end
+    local save = Net.getSave()
+    if type(save) == "table" then
+        if type(save.MaximumZone) == "string" then
+            local num = tonumber(save.MaximumZone:match("%d+"))
+            if num then return num end
+        end
+        if type(save.UnlockedZones) == "table" then
+            local count = 0
+            for _ in pairs(save.UnlockedZones) do count = count + 1 end
+            if count > 0 then return count end
+        end
+    end
+    return 1
+end
+
 -- 2. Tự động mở Slot Pet và Slot Mở Trứng bằng Diamonds (Tele tới 2 máy mua rồi tele về map farm)
 function Progression.performSlotPurchaseTrip(state)
     if not Config.AutoOpenSlots or not state.Enabled then return end
     if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
     if state.SlotBuying then return end
+
+    -- Chỉ cho phép đi mua slot khi đã mở đến Zone 8 trở lên (theo yêu cầu của dj để tránh lỗi map)
+    if Progression.CurrentZoneNumber() < 8 then
+        return
+    end
 
     local gems = Net.currency("Diamonds")
     if gems < 25 then return end
@@ -615,6 +653,15 @@ function Progression.HandleBlockedAndZones(info, state)
     if ok and res == true then
         state.ZoneHatchDone = state.ZoneHatchDone or {}
         state.ZoneHatchDone[ZoneId] = false -- Reset để map mới có cơ hội mở egg nếu đủ coin
+
+        -- Khi vừa mở khóa đến Zone >= 8: Kích hoạt đi mua slot lần đầu nếu chưa từng mua
+        if not state.Zone8SlotBought and Progression.CurrentZoneNumber() >= 8 then
+            state.Zone8SlotBought = true
+            task.spawn(function()
+                task.wait(1.5)
+                Progression.performSlotPurchaseTrip(state)
+            end)
+        end
     end
 end
 

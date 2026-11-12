@@ -374,8 +374,8 @@ local function StartThreads()
         State.StarterPetsPicked = true
         task.wait(0.5)
 
-        -- 2. ĐẦU GAME VÔ: Teleport đến 2 máy Spawn mua slot pet & egg trước khi farm
-        if Config.AutoOpenSlots ~= false then
+        -- 2. ĐẦU GAME VÔ: Teleport đến 2 máy Spawn mua slot pet & egg trước khi farm (chỉ khi >= Zone 8)
+        if Config.AutoOpenSlots ~= false and Progression.CurrentZoneNumber() >= 8 then
             pcall(function()
                 Progression.performSlotPurchaseTrip(State)
             end)
