@@ -188,6 +188,13 @@ local function findMachineModel(machName)
 end
 
 local function getMachineStandCFrame(mach, machName)
+    -- Tọa độ chuẩn do dj xác nhận:
+    if machName == "EquipSlotsMachine" then
+        return CFrame.new(691.85, 18.43, -265.63)
+    elseif machName == "EggHatchSlotsMachine" then
+        return CFrame.new(535.62, 19.85, 91.51)
+    end
+
     if mach and typeof(mach) == "Instance" then
         local prompt = mach:FindFirstChildWhichIsA("ProximityPrompt", true)
         if prompt and prompt.Parent and prompt.Parent:IsA("BasePart") then
@@ -312,11 +319,28 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     -- Kích hoạt tương tác máy
     pcall(function()
         Net.netFire("Machines: Mark Approached", machName)
+        if machName:find("Equip") then
+            Net.netFire("Pet Equip: Activate")
+        end
         if mach then
             Net.netFire("Machines: Mark Approached", mach)
             Net.netFire("Machines: Mark Approached", mach.Name)
             for _, prompt in ipairs(mach:GetDescendants()) do
                 if prompt:IsA("ProximityPrompt") then
+                    pcall(function()
+                        if type(fireproximityprompt) == "function" then
+                            fireproximityprompt(prompt)
+                        end
+                    end)
+                end
+            end
+        end
+
+        -- Quét thêm bất kỳ ProximityPrompt nào trong phạm vi 15 studs quanh vị trí đứng
+        local charPos = hrp.Position
+        for _, prompt in ipairs(workspace:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") and prompt.Parent and prompt.Parent:IsA("BasePart") then
+                if (prompt.Parent.Position - charPos).Magnitude <= 15 then
                     pcall(function()
                         if type(fireproximityprompt) == "function" then
                             fireproximityprompt(prompt)
