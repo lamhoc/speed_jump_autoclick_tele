@@ -345,98 +345,104 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     local hrp = Net.hrp()
     if not hrp then return false end
 
-    -- 1. Teleport tới trước mặt máy
+    -- 1. Teleport tới trước mặt máy và ổn định vị trí
     if cf then
         hrp.CFrame = cf
         pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
-        task.wait(0.5)
+        task.wait(1.0) -- Đợi server nhận diện vị trí đứng trên pad
     end
 
-    -- 2. Kích hoạt tương tác máy
-    pcall(function()
-        Net.netFire("Machines: Mark Approached", machName)
-        if machName:find("Equip") then
-            Net.netFire("Pet Equip: Activate")
-        end
-        if mach then
-            Net.netFire("Machines: Mark Approached", mach)
-            Net.netFire("Machines: Mark Approached", mach.Name)
-            for _, prompt in ipairs(mach:GetDescendants()) do
-                if prompt:IsA("ProximityPrompt") then
-                    pcall(function()
-                        if type(fireproximityprompt) == "function" then
-                            fireproximityprompt(prompt)
-                        end
-                    end)
+    -- 2. Hàm kích hoạt tương tác máy
+    local function triggerApproach()
+        pcall(function()
+            Net.netFire("Machines: Mark Approached", machName)
+            if machName:find("Equip") then
+                Net.netFire("Pet Equip: Activate")
+            end
+            if mach then
+                Net.netFire("Machines: Mark Approached", mach)
+                Net.netFire("Machines: Mark Approached", mach.Name)
+                for _, prompt in ipairs(mach:GetDescendants()) do
+                    if prompt:IsA("ProximityPrompt") then
+                        pcall(function()
+                            if type(fireproximityprompt) == "function" then
+                                fireproximityprompt(prompt)
+                            end
+                        end)
+                    end
                 end
             end
-        end
 
-        -- Quét thêm bất kỳ ProximityPrompt nào trong phạm vi 15 studs quanh vị trí đứng
-        local charPos = hrp.Position
-        for _, prompt in ipairs(workspace:GetDescendants()) do
-            if prompt:IsA("ProximityPrompt") and prompt.Parent and prompt.Parent:IsA("BasePart") then
-                if (prompt.Parent.Position - charPos).Magnitude <= 15 then
-                    pcall(function()
-                        if type(fireproximityprompt) == "function" then
-                            fireproximityprompt(prompt)
-                        end
-                    end)
+            -- Quét thêm bất kỳ ProximityPrompt nào trong phạm vi 15 studs quanh vị trí đứng
+            local charPos = hrp.Position
+            for _, prompt in ipairs(workspace:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") and prompt.Parent and prompt.Parent:IsA("BasePart") then
+                    if (prompt.Parent.Position - charPos).Magnitude <= 15 then
+                        pcall(function()
+                            if type(fireproximityprompt) == "function" then
+                                fireproximityprompt(prompt)
+                            end
+                        end)
+                    end
                 end
             end
-        end
-    end)
-    task.wait(0.4)
+        end)
+    end
 
-    -- 3. Mua slot theo đúng tier chuẩn: RemoteFunction:InvokeServer(tier)
+    triggerApproach()
+    task.wait(0.5)
+
+    -- 3. Đứng lại tại máy trong 12 giây để mua toàn bộ slot (Chống lỗi server check đứng quá xa)
     local anyBought = false
     local currentTier = detectNextTierFromGui(filterKeyword) or (state and tierKey and state[tierKey]) or 1
+    local startTime = os.clock()
+    local stayDuration = 12 -- Đứng lại 12s theo yêu cầu của dj
 
-    for _ = 1, 15 do
-        local gems = Net.currency("Diamonds")
-        if gems < 25 then break end
-
-        -- Thử gọi trực tiếp InvokeServer với currentTier
-        local ok, res = Net.netInvoke(remoteName, currentTier)
-        print(string.format("[KizHub Slot] %s tier %d -> ok: %s, res: %s", remoteName, currentTier, tostring(ok), tostring(res)))
-
-        if ok and res ~= false then
-            anyBought = true
-            currentTier = currentTier + 1
-            if state and tierKey then
-                state[tierKey] = currentTier
-            end
-            task.wait(0.25)
-        else
-            -- Thử fallback click UI trực tiếp
-            local clicked = clickBuyButtonsInGui(filterKeyword)
-            if clicked then
-                task.wait(0.35)
-                local detected = detectNextTierFromGui(filterKeyword)
-                if detected and detected > currentTier then
-                    currentTier = detected
-                    if state and tierKey then
-                        state[tierKey] = currentTier
-                    end
-                    anyBought = true
-                else
-                    break
-                end
-            else
-                -- Fallback cuối cùng Upgrades_Purchase nếu có
-                if fallbackUpgrade then
-                    local okFb, resFb = Net.netInvoke("Upgrades_Purchase", fallbackUpgrade)
-                    if okFb and resFb ~= false then
-                        anyBought = true
-                        task.wait(0.25)
-                    else
-                        break
-                    end
-                else
-                    break
-                end
-            end
+    while (os.clock() - startTime) < stayDuration do
+        -- Khóa giữ chặt CFrame trước mặt máy chống bị trôi hoặc đẩy văng
+        if cf then
+            pcall(function()
+                hrp.CFrame = cf
+                hrp.AssemblyLinearVelocity = Vector3.zero
+            end)
         end
+
+        local gems = Net.currency("Diamonds")
+        if gems >= 25 then
+            -- Thử gọi trực tiếp InvokeServer với currentTier
+            local ok, res = Net.netInvoke(remoteName, currentTier)
+            print(string.format("[KizHub Slot] %s tier %d -> ok: %s, res: %s", remoteName, currentTier, tostring(ok), tostring(res)))
+
+            if ok and res ~= false then
+                anyBought = true
+                currentTier = currentTier + 1
+                if state and tierKey then
+                    state[tierKey] = currentTier
+                end
+                task.wait(0.3)
+            else
+                -- Thử fallback click UI trực tiếp
+                local clicked = clickBuyButtonsInGui(filterKeyword)
+                if clicked then
+                    task.wait(0.4)
+                    local detected = detectNextTierFromGui(filterKeyword)
+                    if detected and detected > currentTier then
+                        currentTier = detected
+                        if state and tierKey then
+                            state[tierKey] = currentTier
+                        end
+                        anyBought = true
+                    end
+                else
+                    -- Kích hoạt lại tương tác phòng trường hợp server ngắt session
+                    triggerApproach()
+                    task.wait(0.4)
+                end
+            end
+        else
+            task.wait(0.5)
+        end
+        task.wait(0.3)
     end
 
     -- 4. Đóng giao diện UI máy
