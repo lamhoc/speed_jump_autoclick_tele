@@ -35,8 +35,6 @@ function QuestFarm.init(deps)
     Net = deps.Network
     Config = deps.Config
     RankData = deps.RankData
-
-    pcall(QuestFarm.installOrbHook)
 end
 
 function QuestFarm.CurrentWorld()
@@ -328,7 +326,7 @@ end
 
 function QuestFarm.FarmTick(state)
     if not state.Enabled or not Config.AutoFarm then return end
-    if state.WorldSwitching or state.WorldMismatch or state.Hopping or state.HatchSession then return end
+    if state.WorldSwitching or state.WorldMismatch or state.Hopping or state.HatchSession or state.SlotBuying then return end
 
     QuestFarm.EnsureInBestZone(state)
     local zoneId = QuestFarm.BestZoneId()
@@ -483,92 +481,32 @@ function QuestFarm.installMaxPetSpeed(state)
     end)
 end
 
--- ================= 3. ORB & LOOTBAG COLLECTOR (HOOK ORBCMDS TỰ ĐỘNG NHẬN COIN & GEMS 100%) =================
-local isOrbHooked = false
-function QuestFarm.installOrbHook()
-    if isOrbHooked then return end
-    task.spawn(function()
-        for attempt = 1, 30 do
-            local hooked = false
-            pcall(function()
-                local RS = game:GetService("ReplicatedStorage")
-                local orbModule = RS:FindFirstChild("Library")
-                    and RS.Library:FindFirstChild("Client")
-                    and RS.Library.Client:FindFirstChild("OrbCmds")
-                    and RS.Library.Client.OrbCmds:FindFirstChild("Orb")
-
-                if orbModule then
-                    local Orb = require(orbModule)
-                    if type(Orb) == "table" and type(Orb.new) == "function" and not rawget(Orb, "__kizHooked") then
-                        local setreadonly_ = setreadonly or makewriteable or (getgenv and getgenv().setreadonly)
-                        if type(setreadonly_) == "function" then
-                            pcall(setreadonly_, Orb, false)
-                        end
-
-                        local origNew = Orb.new
-                        Orb.new = function(...)
-                            local orb = origNew(...)
-                            if type(orb) == "table" and type(orb.Collect) == "function" then
-                                task.defer(function()
-                                    task.wait(tonumber(orb._pickupDelay) or 0.05)
-                                    pcall(orb.Collect, orb, nil, nil, true)
-                                end)
-                            end
-                            return orb
-                        end
-
-                        rawset(Orb, "__kizHooked", true)
-                        if type(setreadonly_) == "function" then
-                            pcall(setreadonly_, Orb, true)
-                        end
-                        hooked = true
-                        isOrbHooked = true
-                    end
-                end
-            end)
-            if hooked or isOrbHooked then break end
-            task.wait(1.0)
-        end
-    end)
-end
-
+-- ================= 3. ORB & LOOTBAG COLLECTOR (CHUẨN 100% KAITUN.LUA) =================
 local orbMapCache = nil
 function QuestFarm.findOrbMap()
     if type(orbMapCache) == "table" then return orbMapCache end
-    local ok, map = pcall(function()
+    local ok, map = Net.gcall(function()
         local RS = game:GetService("ReplicatedStorage")
         local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds")
-        if not mod then return nil end
-
-        local fn = nil
-        if type(getsenv) == "function" then
-            local env = getsenv(mod)
-            if type(env) == "table" then
-                fn = env.ProcessCreate or env.Create or env.Spawn or env.Collect
-            end
-        end
-
+        if not mod or type(getsenv) ~= "function" then return nil end
+        local env = getsenv(mod)
+        local fn = type(env) == "table" and env.ProcessCreate or nil
         if type(fn) ~= "function" and type(getgc) == "function" then
             for _, f in ipairs(getgc(false)) do
-                if type(f) == "function" then
-                    local n = debug.info(f, "n")
-                    if n == "ProcessCreate" or n == "Create" or n == "Collect" then
-                        fn = f
-                        break
-                    end
+                if type(f) == "function" and debug.info(f, "n") == "ProcessCreate" then
+                    fn = f
+                    break
                 end
             end
         end
-
-        if type(fn) == "function" and type(debug.getupvalues) == "function" then
-            for _, up in pairs(debug.getupvalues(fn)) do
-                if type(up) == "table" then
-                    local strKeys = false
-                    for k in pairs(up) do
-                        if type(k) == "string" then strKeys = true break end
-                    end
-                    if not strKeys then return up end
+        if type(fn) ~= "function" then return nil end
+        for _, up in pairs(debug.getupvalues(fn)) do
+            if type(up) == "table" then
+                local strKeys = false
+                for k in pairs(up) do
+                    if type(k) == "string" then strKeys = true break end
                 end
+                if not strKeys then return up end
             end
         end
         return nil
@@ -582,7 +520,7 @@ end
 function QuestFarm.CollectOrbsTick(state)
     if not state or not state.Alive or not state.Enabled then return end
 
-    -- 1. Thu thập Orbs sạch thông qua client-side OrbCmds (Cộng tiền & kim cương 100%)
+    -- 1. Thu thập Orbs sạch thông qua client-side OrbCmds (Chuẩn 100% kaitun.lua)
     pcall(function()
         local map = QuestFarm.findOrbMap()
         if type(map) == "table" then
@@ -598,35 +536,23 @@ function QuestFarm.CollectOrbsTick(state)
         end
     end)
 
-    -- 2. Hút Lootbags & Túi Coin / Gem rơi từ Breakables vào nhân vật
+    -- 2. Hút Lootbags & dọn sạch visual orbs khỏi sàn (Chuẩn 100% kaitun.lua)
     pcall(function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        -- 2. Hút Lootbags & Kích hoạt Touch cho Orbs rơi từ Breakables
-        local things = workspace:FindFirstChild("__THINGS")
-        local hasTouch = (type(firetouchinterest) == "function")
 
-        local lootbags = things and things:FindFirstChild("Lootbags")
-        if lootbags then
+        local things = workspace:FindFirstChild("__THINGS")
+        if not things then return end
+
+        -- Lootbags rơi từ breakables: Kéo lại người và chạm
+        local lootbags = things:FindFirstChild("Lootbags")
+        if lootbags and type(firetouchinterest) == "function" then
             local pCf = hrp.CFrame
             for _, bag in ipairs(lootbags:GetChildren()) do
                 pcall(function()
                     bag:PivotTo(pCf)
                     local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
-                    if part and hasTouch then
-                        firetouchinterest(hrp, part, 0)
-                        firetouchinterest(hrp, part, 1)
-                    end
-                end)
-            end
-        end
-
-        local orbs = things and things:FindFirstChild("Orbs")
-        if orbs and hasTouch then
-            for _, orbPart in ipairs(orbs:GetChildren()) do
-                pcall(function()
-                    local part = orbPart:IsA("BasePart") and orbPart or (orbPart.PrimaryPart or orbPart:FindFirstChildWhichIsA("BasePart"))
                     if part then
                         firetouchinterest(hrp, part, 0)
                         firetouchinterest(hrp, part, 1)
@@ -635,7 +561,16 @@ function QuestFarm.CollectOrbsTick(state)
             end
         end
 
-        -- Dọn sạch bất kỳ BillboardGui rác dính vào nhân vật (ẩn an toàn thay vì destroy)
+        -- Dọn sạch visual orbs khỏi workspace.__THINGS.Orbs (như kaitun.lua purge visual)
+        -- để không bị kẹt lơ lửng quanh người hoặc chất đống trên sàn
+        local orbs = things:FindFirstChild("Orbs")
+        if orbs then
+            for _, o in ipairs(orbs:GetChildren()) do
+                pcall(function() o:Destroy() end)
+            end
+        end
+
+        -- Ẩn an toàn các BillboardGui rác dính vào nhân vật
         for _, child in ipairs(char:GetChildren()) do
             if child:IsA("BillboardGui") then
                 pcall(function() child.Enabled = false end)

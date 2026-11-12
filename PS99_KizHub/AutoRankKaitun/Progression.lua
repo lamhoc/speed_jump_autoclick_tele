@@ -146,183 +146,78 @@ function Progression.autoPickStarterPets(state)
     return false
 end
 
--- 2. Tự động mở Slot Pet và Slot Mở Trứng bằng Diamonds (Ưu tiên mức độ cao nhất)
-function Progression.autoOpenSlots(state)
-    if not Config.AutoOpenSlots or not state.Enabled then return end
-    if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
-
-    local now = os.clock()
-    if now - (state.LastSlotPurchaseAt or 0) < 5 then return end
-    state.LastSlotPurchaseAt = now
-
-    local gems = Net.currency("Diamonds")
-    if gems < 25 then return end
-
-    local hrp = Net.hrp()
-    if not hrp then return end
-
-    -- 2.1 Tìm vị trí máy EquipSlotsMachine hoặc EggHatchSlotsMachine
-    local mach1 = nil
+-- Helper tìm máy nâng cấp
+local function findMachineModel(machName)
     if Net.isfn(G.MachineCmds, "GetModels") then
-        local ok1, mods1 = Net.gcall(G.MachineCmds.GetModels, "EquipSlotsMachine")
-        if ok1 and type(mods1) == "table" and mods1[1] and typeof(mods1[1]) == "Instance" then
-            mach1 = mods1[1]
-        end
-    end
-    if not mach1 then
-        local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
-        if machFolder then mach1 = machFolder:FindFirstChild("EquipSlotsMachine") end
-    end
-
-    local mach2 = nil
-    if Net.isfn(G.MachineCmds, "GetModels") then
-        local ok2, mods2 = Net.gcall(G.MachineCmds.GetModels, "EggHatchSlotsMachine")
-        if ok2 and type(mods2) == "table" and mods2[1] and typeof(mods2[1]) == "Instance" then
-            mach2 = mods2[1]
-        end
-    end
-    if not mach2 then
-        local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
-        if machFolder then mach2 = machFolder:FindFirstChild("EggHatchSlotsMachine") end
-    end
-
-    local targetMach = mach1 or mach2
-    local targetPivot = targetMach and targetMach:GetPivot().Position
-    local origPos = hrp.CFrame
-    local needTeleport = (targetPivot ~= nil and (hrp.Position - targetPivot).Magnitude > 40)
-
-    -- Nếu đứng quá xa máy nâng cấp ở Spawn: Lưu vị trí, nhảy tới trước mặt máy để bypass kiểm tra khoảng cách server
-    if needTeleport then
-        state.SlotBuying = true
-        hrp.CFrame = CFrame.new(targetPivot + Vector3.new(0, 3, 5))
-        task.wait(0.2)
-    end
-
-    -- 2.2 Kích hoạt Proximity của cả 2 máy nâng cấp slot
-    pcall(function()
-        Net.netFire("Machines: Mark Approached", "EquipSlotsMachine")
-        Net.netFire("Machines: Mark Approached", "EggHatchSlotsMachine")
-        if mach1 then
-            Net.netFire("Machines: Mark Approached", mach1)
-            Net.netFire("Machines: Mark Approached", mach1.Name)
-        end
-        if mach2 then
-            Net.netFire("Machines: Mark Approached", mach2)
-            Net.netFire("Machines: Mark Approached", mach2.Name)
-        end
-    end)
-    task.wait(0.1)
-
-    -- 2.3 Mua Slot Pet (Thử tối đa 10 lần liên tiếp để mua hết số slot có thể)
-    for _ = 1, 10 do
-        local bought = false
-        local ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase", 1)
-        if ok and res ~= false then bought = true end
-        if not bought then
-            local ok2, res2 = Net.netInvoke("EquipSlotsMachine_RequestPurchase")
-            if ok2 and res2 ~= false then bought = true end
-        end
-        if not bought then
-            local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "PetSlots")
-            if okFb and resFb ~= false then bought = true end
-        end
-
-        -- Tự click nút Mua trong PlayerGui nếu giao diện đang mở trên màn hình
-        pcall(function()
-            local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-            if not pgui then return end
-            for _, gui in ipairs(pgui:GetChildren()) do
-                if gui:IsA("ScreenGui") and gui.Enabled then
-                    local gName = gui.Name:lower()
-                    if gName:find("slot") or gName:find("equip") or gName:find("machine") then
-                        for _, btn in ipairs(gui:GetDescendants()) do
-                            if btn:IsA("TextButton") or btn:IsA("ImageButton") then
-                                local bName = btn.Name:lower()
-                                local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
-                                if bName:find("buy") or bName:find("purchase") or bText:find("buy") or bText:find("purchase") or bText:find("💎") then
-                                    if type(getconnections) == "function" then
-                                        for _, c in ipairs(getconnections(btn.Activated) or {}) do
-                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
-                                        end
-                                        for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
-                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
-                                        end
-                                    end
-                                    bought = true
-                                end
-                            end
-                        end
-                    end
+        local ok, models = Net.gcall(G.MachineCmds.GetModels, machName)
+        if ok and type(models) == "table" then
+            for _, m in pairs(models) do
+                if typeof(m) == "Instance" and m.Parent then
+                    return m
                 end
             end
-        end)
-
-        if not bought then break end
-        task.wait(0.2)
+        end
     end
 
-    -- 2.4 Mua Slot Trứng (Chạy độc lập, thử tối đa 10 lần liên tiếp)
-    for _ = 1, 10 do
-        local bought = false
-        local ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase", 1)
-        if ok and res ~= false then bought = true end
-        if not bought then
-            local ok2, res2 = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase")
-            if ok2 and res2 ~= false then bought = true end
-        end
-        if not bought then
-            local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "EggSlots")
-            if okFb and resFb ~= false then bought = true end
-        end
-
-        -- Tự click nút Mua Slot Trứng trong PlayerGui nếu có
-        pcall(function()
-            local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-            if not pgui then return end
-            for _, gui in ipairs(pgui:GetChildren()) do
-                if gui:IsA("ScreenGui") and gui.Enabled then
-                    local gName = gui.Name:lower()
-                    if gName:find("egg") or gName:find("slot") or gName:find("hatch") then
-                        for _, btn in ipairs(gui:GetDescendants()) do
-                            if btn:IsA("TextButton") or btn:IsA("ImageButton") then
-                                local bName = btn.Name:lower()
-                                local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
-                                if bName:find("buy") or bName:find("purchase") or bText:find("buy") or bText:find("purchase") or bText:find("💎") then
-                                    if type(getconnections) == "function" then
-                                        for _, c in ipairs(getconnections(btn.Activated) or {}) do
-                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
-                                        end
-                                        for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
-                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
-                                        end
-                                    end
-                                    bought = true
-                                end
-                            end
-                        end
-                    end
-                end
+    local things = workspace:FindFirstChild("__THINGS")
+    local machFolder = things and things:FindFirstChild("Machines")
+    if machFolder then
+        local direct = machFolder:FindFirstChild(machName)
+        if direct then return direct end
+        for _, m in ipairs(machFolder:GetChildren()) do
+            if m.Name:lower():find(machName:lower()) then
+                return m
             end
-        end)
-
-        if not bought then break end
-        task.wait(0.2)
+        end
     end
 
-    -- 2.5 Tự động đóng các giao diện popup mua slot trên màn hình
+    local map = workspace:FindFirstChild("Map")
+    if map then
+        for _, desc in ipairs(map:GetDescendants()) do
+            if desc:IsA("Model") and (desc.Name == machName or desc.Name:lower():find(machName:lower())) then
+                return desc
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getMachineStandCFrame(mach, fallbackName)
+    if mach and typeof(mach) == "Instance" then
+        local pad = mach:FindFirstChild("Pad", true) or mach:FindFirstChild("Platform", true)
+        if pad and pad:IsA("BasePart") then
+            return CFrame.new(pad.Position + Vector3.new(0, 3, 0))
+        end
+        local p = mach:GetPivot()
+        return CFrame.new(p.Position + Vector3.new(0, 3, 4))
+    end
+    -- Fallback về Spawn nếu không lấy được part máy
+    if QuestFarm and type(QuestFarm.ZoneArrivalPosition) == "function" then
+        local spawnPos = QuestFarm.ZoneArrivalPosition("Spawn")
+        if spawnPos then return CFrame.new(spawnPos + Vector3.new(0, 3, 0)) end
+    end
+    return nil
+end
+
+local function clickBuyButtonsInGui(filterKeyword)
     pcall(function()
         local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
         if not pgui then return end
         for _, gui in ipairs(pgui:GetChildren()) do
             if gui:IsA("ScreenGui") and gui.Enabled then
                 local gName = gui.Name:lower()
-                if gName:find("slot") or gName:find("equip") or gName:find("machine") then
-                    for _, closeBtn in ipairs(gui:GetDescendants()) do
-                        if closeBtn:IsA("TextButton") or closeBtn:IsA("ImageButton") then
-                            local cName = closeBtn.Name:lower()
-                            if cName == "close" or cName == "x" or cName:find("exit") then
+                if gName:find("slot") or gName:find("machine") or gName:find("upgrade") or (filterKeyword and gName:find(filterKeyword)) then
+                    for _, btn in ipairs(gui:GetDescendants()) do
+                        if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+                            local bName = btn.Name:lower()
+                            local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
+                            if bName:find("buy") or bName:find("purchase") or bText:find("buy") or bText:find("purchase") or bText:find("💎") then
                                 if type(getconnections) == "function" then
-                                    for _, c in ipairs(getconnections(closeBtn.Activated) or {}) do
+                                    for _, c in ipairs(getconnections(btn.Activated) or {}) do
+                                        if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                    end
+                                    for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
                                         if c.Fire then c:Fire() elseif c.Function then c.Function() end
                                     end
                                 end
@@ -333,19 +228,152 @@ function Progression.autoOpenSlots(state)
             end
         end
     end)
+end
 
-    -- 2.5 Dịch chuyển quay lại vị trí farm bãi ban đầu
-    if needTeleport and origPos then
-        task.wait(0.1)
+local function closeAnyMachinePopup()
+    pcall(function()
+        local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if not pgui then return end
+        for _, gui in ipairs(pgui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                local gName = gui.Name:lower()
+                if gName:find("slot") or gName:find("equip") or gName:find("machine") or gName:find("upgrade") then
+                    for _, closeBtn in ipairs(gui:GetDescendants()) do
+                        if closeBtn:IsA("TextButton") or closeBtn:IsA("ImageButton") then
+                            local cName = closeBtn.Name:lower()
+                            if cName == "close" or cName == "x" or cName:find("exit") or cName:find("cross") then
+                                if type(getconnections) == "function" then
+                                    for _, c in ipairs(getconnections(closeBtn.Activated) or {}) do
+                                        if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                    end
+                                    for _, c in ipairs(getconnections(closeBtn.MouseButton1Click) or {}) do
+                                        if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- 2. Tự động mở Slot Pet và Slot Mở Trứng bằng Diamonds (Tele tới máy mua rồi tele về map farm)
+function Progression.autoOpenSlots(state)
+    if not Config.AutoOpenSlots or not state.Enabled then return end
+    if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
+    if state.SlotBuying then return end
+
+    local now = os.clock()
+    if now - (state.LastSlotPurchaseAt or 0) < 15 then return end
+    state.LastSlotPurchaseAt = now
+
+    local gems = Net.currency("Diamonds")
+    if gems < 25 then return end
+
+    local hrp = Net.hrp()
+    if not hrp then return end
+
+    local machEquip = findMachineModel("EquipSlotsMachine")
+    local machEgg = findMachineModel("EggHatchSlotsMachine")
+    local cfEquip = getMachineStandCFrame(machEquip, "EquipSlotsMachine")
+    local cfEgg = getMachineStandCFrame(machEgg, "EggHatchSlotsMachine")
+
+    if not cfEquip and not cfEgg then return end
+
+    -- Bắt đầu chuỗi mua slot bằng teleport
+    state.SlotBuying = true
+    state.Action = "Buying Slots (Teleport to Machines)"
+
+    -- =========================================================================
+    -- 1. TELEPORT ĐẾN MÁY EQUIP SLOTS MACHINE (MUA SLOT PET)
+    -- =========================================================================
+    if cfEquip then
+        hrp.CFrame = cfEquip
+        pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+        task.wait(0.5)
+
         pcall(function()
-            local curHrp = Net.hrp()
-            if curHrp then
-                curHrp.CFrame = origPos
-                curHrp.AssemblyLinearVelocity = Vector3.zero
+            Net.netFire("Machines: Mark Approached", "EquipSlotsMachine")
+            if machEquip then
+                Net.netFire("Machines: Mark Approached", machEquip)
+                Net.netFire("Machines: Mark Approached", machEquip.Name)
             end
         end)
-        state.SlotBuying = false
+        task.wait(0.2)
+
+        for _ = 1, 10 do
+            local bought = false
+            local ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase", 1)
+            if ok and res ~= false then bought = true end
+            if not bought then
+                local ok2, res2 = Net.netInvoke("EquipSlotsMachine_RequestPurchase")
+                if ok2 and res2 ~= false then bought = true end
+            end
+            if not bought then
+                local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "PetSlots")
+                if okFb and resFb ~= false then bought = true end
+            end
+
+            clickBuyButtonsInGui("equip")
+            if not bought then break end
+            task.wait(0.2)
+        end
+        closeAnyMachinePopup()
+        task.wait(0.3)
     end
+
+    -- =========================================================================
+    -- 2. TELEPORT ĐẾN MÁY EGG HATCH SLOTS MACHINE (MUA SLOT TRỨNG)
+    -- =========================================================================
+    if cfEgg then
+        hrp.CFrame = cfEgg
+        pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+        task.wait(0.5)
+
+        pcall(function()
+            Net.netFire("Machines: Mark Approached", "EggHatchSlotsMachine")
+            if machEgg then
+                Net.netFire("Machines: Mark Approached", machEgg)
+                Net.netFire("Machines: Mark Approached", machEgg.Name)
+            end
+        end)
+        task.wait(0.2)
+
+        for _ = 1, 10 do
+            local bought = false
+            local ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase", 1)
+            if ok and res ~= false then bought = true end
+            if not bought then
+                local ok2, res2 = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase")
+                if ok2 and res2 ~= false then bought = true end
+            end
+            if not bought then
+                local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "EggSlots")
+                if okFb and resFb ~= false then bought = true end
+            end
+
+            clickBuyButtonsInGui("egg")
+            if not bought then break end
+            task.wait(0.2)
+        end
+        closeAnyMachinePopup()
+        task.wait(0.3)
+    end
+
+    -- =========================================================================
+    -- 3. TELEPORT QUAY TRỞ LẠI BÃI FARM TỐT NHẤT VÀ TIẾP TỤC
+    -- =========================================================================
+    state.SlotBuying = false
+    task.wait(0.2)
+    pcall(function()
+        if QuestFarm and type(QuestFarm.EnsureInBestZone) == "function" then
+            state.ReturnAfterHatch = os.clock()
+            QuestFarm.EnsureInBestZone(state)
+        end
+    end)
+    task.wait(0.5)
 end
 
 -- 3. Tự động nhận Free Gifts định kỳ
