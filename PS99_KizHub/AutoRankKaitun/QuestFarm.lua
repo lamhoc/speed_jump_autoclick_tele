@@ -300,21 +300,8 @@ function QuestFarm.TargetPets(assignments, state)
 end
 
 function QuestFarm.MaybeEquipBest(force)
-    if not Config.AutoEquipBestPets then return end
-    local now = os.clock()
-    if not force and (now - LastEquipBestAt < 15 or now - lastEquipCheckAt < 3) then return end
-    lastEquipCheckAt = now
-
-    if not Net.isfn(G.PetCmds, "EquipBest") then return end
-
-    if not force and Net.isfn(G.PetCmds, "GetEquipped") then
-        local okEq, eq = Net.gcall(G.PetCmds.GetEquipped)
-        if okEq and type(eq) == "table" and next(eq) ~= nil then return end
-        if okEq and type(eq) == "number" and eq > 0 then return end
-    end
-
-    LastEquipBestAt = now
-    Net.gcall(G.PetCmds.EquipBest)
+    -- Bỏ tính năng auto equip best pet vì game đã tự có cơ chế đó sẵn
+    return
 end
 
 function QuestFarm.WantsDiamonds(state)

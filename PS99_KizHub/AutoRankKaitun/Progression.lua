@@ -130,9 +130,6 @@ function Progression.autoPickStarterPets(state)
         if count >= 1 then
             StarterDone = true
             if state then state.StarterPetsPicked = true end
-            if Net.isfn(G.PetCmds, "EquipBest") then
-                pcall(G.PetCmds.EquipBest)
-            end
             return true
         end
     end
@@ -404,7 +401,7 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     if cf then
         hrp.CFrame = cf
         pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
-        task.wait(1.0) -- Đợi server nhận diện vị trí đứng trên pad
+        task.wait(0.4) -- Đợi server nhận diện vị trí đứng trên pad
     end
 
     -- 2. Hàm kích hoạt tương tác máy
@@ -445,14 +442,14 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     end
 
     triggerApproach()
-    task.wait(0.5)
+    task.wait(0.3)
 
-    -- 3. Đứng lại tại máy trong 12 giây để mua toàn bộ slot
+    -- 3. Đứng lại tại máy trong 5 giây để mua toàn bộ slot (Rút ngắn theo yêu cầu của dj)
     local anyBought = false
     local isKnownTier = (state and tierKey and state[tierKey] ~= nil)
     local currentTier = (isKnownTier and state[tierKey]) or detectNextTierFromGui(filterKeyword) or 1
     local startTime = os.clock()
-    local stayDuration = 12 -- Đứng lại 12s theo yêu cầu của dj
+    local stayDuration = 5 -- Rút ngắn còn 5s theo yêu cầu của dj
     local unownedFails = 0
 
     while (os.clock() - startTime) < stayDuration do

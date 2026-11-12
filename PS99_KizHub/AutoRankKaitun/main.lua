@@ -199,9 +199,12 @@ RankController.init(autoRankDeps)
 
 -- 5. Kích hoạt tối ưu đồ họa, Anti-AFK & Giao diện Dashboard
 if Config.Disable3DRendering == false then
-    EngineOptim.restoreNormal(Config.TargetFPS or 60)
+    EngineOptim.restoreNormal(Config.TargetFPS or 5)
 else
     EngineOptim.applyAll(Config.TargetFPS or 5, true)
+end
+if type(setfpscap) == "function" then
+    pcall(setfpscap, 5)
 end
 EngineOptim.hideOtherPlayers()
 AntiAFK.installGodModeAntiAfk(Network.netFire, 35)

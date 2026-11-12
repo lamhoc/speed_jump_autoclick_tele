@@ -22,7 +22,7 @@ local Config = {
     AutoUseFlags = true,
     AutoSpawnEvents = true,
     AutoBuyZones = true,
-    AutoEquipBestPets = true,
+    AutoEquipBestPets = false, -- Game đã tự động equip, tắt để không can thiệp
 
     -- 5 Tính Năng Bổ Trợ Đặc Tả (Mới tích hợp)
     AutoTapBreakables = true,     -- [1. Auto Click]: Click phá bãi farm 10Hz song song cùng pet
@@ -64,7 +64,7 @@ local Config = {
     ShowGui = true,             -- [BẬT GUI FROST CARD]: Hiển thị thẻ thông số và badge đỉnh
     BlackoutGui = true,         -- [ĐEN TOÀN MÀN HÌNH]: Màn hình đen tuyền AMOLED 100%
     Disable3DRendering = true,  -- [TẮT 3D RENDERING]: Tiết kiệm CPU / GPU tối đa cho máy farm nhiều acc
-    TargetFPS = 60,             -- FPS mượt để dễ quan sát
+    TargetFPS = 5,              -- Khóa 5 FPS theo yêu cầu để tối ưu tài nguyên tối đa
     GuiToggleKey = Enum.KeyCode.RightControl,
 
     FarmTick = 0.25,
