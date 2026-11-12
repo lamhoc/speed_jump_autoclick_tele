@@ -146,59 +146,75 @@ function Progression.autoPickStarterPets(state)
     return false
 end
 
--- 2. Tự động mở Slot Pet và Slot Mở Trứng bằng Diamonds
+-- 2. Tự động mở Slot Pet và Slot Mở Trứng bằng Diamonds (Ưu tiên mức độ cao nhất)
 function Progression.autoOpenSlots(state)
     if not Config.AutoOpenSlots or not state.Enabled then return end
     if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
 
     local now = os.clock()
-    if now - (state.LastSlotPurchaseAt or 0) < 6 then return end
+    if now - (state.LastSlotPurchaseAt or 0) < 5 then return end
     state.LastSlotPurchaseAt = now
 
     local gems = Net.currency("Diamonds")
-    if gems < 100 then return end
+    if gems < 25 then return end
 
-    -- 2.1 Kích hoạt Proximity của cả 2 máy nâng cấp slot
+    local hrp = Net.hrp()
+    if not hrp then return end
+
+    -- 2.1 Tìm vị trí máy EquipSlotsMachine hoặc EggHatchSlotsMachine
+    local mach1 = nil
+    if Net.isfn(G.MachineCmds, "GetModels") then
+        local ok1, mods1 = Net.gcall(G.MachineCmds.GetModels, "EquipSlotsMachine")
+        if ok1 and type(mods1) == "table" and mods1[1] and typeof(mods1[1]) == "Instance" then
+            mach1 = mods1[1]
+        end
+    end
+    if not mach1 then
+        local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
+        if machFolder then mach1 = machFolder:FindFirstChild("EquipSlotsMachine") end
+    end
+
+    local mach2 = nil
+    if Net.isfn(G.MachineCmds, "GetModels") then
+        local ok2, mods2 = Net.gcall(G.MachineCmds.GetModels, "EggHatchSlotsMachine")
+        if ok2 and type(mods2) == "table" and mods2[1] and typeof(mods2[1]) == "Instance" then
+            mach2 = mods2[1]
+        end
+    end
+    if not mach2 then
+        local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
+        if machFolder then mach2 = machFolder:FindFirstChild("EggHatchSlotsMachine") end
+    end
+
+    local targetMach = mach1 or mach2
+    local targetPivot = targetMach and targetMach:GetPivot().Position
+    local origPos = hrp.CFrame
+    local needTeleport = (targetPivot ~= nil and (hrp.Position - targetPivot).Magnitude > 40)
+
+    -- Nếu đứng quá xa máy nâng cấp ở Spawn: Lưu vị trí, nhảy tới trước mặt máy để bypass kiểm tra khoảng cách server
+    if needTeleport then
+        state.SlotBuying = true
+        hrp.CFrame = CFrame.new(targetPivot + Vector3.new(0, 3, 5))
+        task.wait(0.2)
+    end
+
+    -- 2.2 Kích hoạt Proximity của cả 2 máy nâng cấp slot
     pcall(function()
         Net.netFire("Machines: Mark Approached", "EquipSlotsMachine")
         Net.netFire("Machines: Mark Approached", "EggHatchSlotsMachine")
-
-        if Net.isfn(G.MachineCmds, "GetModels") then
-            local ok1, mods1 = Net.gcall(G.MachineCmds.GetModels, "EquipSlotsMachine")
-            if ok1 and type(mods1) == "table" then
-                for _, m in pairs(mods1) do
-                    if typeof(m) == "Instance" then
-                        Net.netFire("Machines: Mark Approached", m)
-                        Net.netFire("Machines: Mark Approached", m.Name)
-                    end
-                end
-            end
-            local ok2, mods2 = Net.gcall(G.MachineCmds.GetModels, "EggHatchSlotsMachine")
-            if ok2 and type(mods2) == "table" then
-                for _, m in pairs(mods2) do
-                    if typeof(m) == "Instance" then
-                        Net.netFire("Machines: Mark Approached", m)
-                        Net.netFire("Machines: Mark Approached", m.Name)
-                    end
-                end
-            end
+        if mach1 then
+            Net.netFire("Machines: Mark Approached", mach1)
+            Net.netFire("Machines: Mark Approached", mach1.Name)
         end
-
-        local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
-        if machFolder then
-            for _, m in ipairs(machFolder:GetChildren()) do
-                local n = m.Name
-                if n:find("Equip") or n:find("Egg") or n:find("Slot") then
-                    Net.netFire("Machines: Mark Approached", m)
-                    Net.netFire("Machines: Mark Approached", n)
-                end
-            end
+        if mach2 then
+            Net.netFire("Machines: Mark Approached", mach2)
+            Net.netFire("Machines: Mark Approached", mach2.Name)
         end
     end)
     task.wait(0.1)
 
-    -- 2.2 Mua Slot Pet (Thử tối đa 5 lần mỗi nhịp)
-    for _ = 1, 5 do
+    -- 2.3 Mua Slot Pet (Thử tối đa 10 lần liên tiếp để mua hết số slot có thể)
+    for _ = 1, 10 do
         local bought = false
         local ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase", 1)
         if ok and res ~= false then bought = true end
@@ -212,11 +228,11 @@ function Progression.autoOpenSlots(state)
             if okFb and resFb ~= false then bought = true end
         end
         if not bought then break end
-        task.wait(0.2)
+        task.wait(0.15)
     end
 
-    -- 2.3 Mua Slot Trứng (Chạy độc lập, không bị bỏ qua nếu Slot Pet chưa đủ gem hay max)
-    for _ = 1, 5 do
+    -- 2.4 Mua Slot Trứng (Chạy độc lập, thử tối đa 10 lần liên tiếp)
+    for _ = 1, 10 do
         local bought = false
         local ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase", 1)
         if ok and res ~= false then bought = true end
@@ -230,7 +246,20 @@ function Progression.autoOpenSlots(state)
             if okFb and resFb ~= false then bought = true end
         end
         if not bought then break end
-        task.wait(0.2)
+        task.wait(0.15)
+    end
+
+    -- 2.5 Dịch chuyển quay lại vị trí farm bãi ban đầu
+    if needTeleport and origPos then
+        task.wait(0.1)
+        pcall(function()
+            local curHrp = Net.hrp()
+            if curHrp then
+                curHrp.CFrame = origPos
+                curHrp.AssemblyLinearVelocity = Vector3.zero
+            end
+        end)
+        state.SlotBuying = false
     end
 end
 

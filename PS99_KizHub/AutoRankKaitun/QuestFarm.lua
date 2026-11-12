@@ -584,10 +584,12 @@ function QuestFarm.findOrbMap()
     return orbMapCache
 end
 
+local processedLootbags = {}
+
 function QuestFarm.CollectOrbsTick(state)
     if not state or not state.Alive or not state.Enabled then return end
 
-    -- 1. Thu thập Orbs client-side thông qua OrbCmds table (Nhanh, không lag)
+    -- 1. Thu thập Orbs client-side thông qua OrbCmds table (Nhanh, không lag, không lỗi visual)
     pcall(function()
         local map = QuestFarm.findOrbMap()
         if type(map) == "table" then
@@ -603,7 +605,7 @@ function QuestFarm.CollectOrbsTick(state)
         end
     end)
 
-    -- 2. Hút sạch Lootbags & Túi quà rơi về nhân vật (Sử dụng PivotTo + FireTouchInterest)
+    -- 2. Hút sạch Lootbags & Túi coin/gem (Thu thập 1 lần duy nhất rồi tự hủy, không gán lặp CFrame gây lỗi dính người)
     pcall(function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -611,50 +613,60 @@ function QuestFarm.CollectOrbsTick(state)
         local things = workspace:FindFirstChild("__THINGS")
         if not things then return end
         local pCf = hrp.CFrame
+        local hrpPos = hrp.Position
         local hasTouch = (type(firetouchinterest) == "function")
+
+        -- Dọn sạch bất kỳ BillboardGui hoặc số sát thương rác bị dính vào nhân vật
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("BillboardGui") then
+                pcall(function() child:Destroy() end)
+            end
+        end
 
         local lootbagsFolder = things:FindFirstChild("Lootbags")
         if lootbagsFolder then
+            local now = os.clock()
             for _, bag in ipairs(lootbagsFolder:GetChildren()) do
-                pcall(function()
-                    bag:PivotTo(pCf)
-                    local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
-                    if part and hasTouch then
-                        firetouchinterest(hrp, part, 0)
-                        firetouchinterest(hrp, part, 1)
-                    end
-                end)
-            end
-        end
-
-        -- 3. Hút sạch Orbs & Tiền / Kim cương rơi
-        local orbsFolder = things:FindFirstChild("Orbs")
-        if orbsFolder then
-            for _, orb in ipairs(orbsFolder:GetChildren()) do
-                pcall(function()
-                    orb:PivotTo(pCf)
-                    local part = orb:IsA("BasePart") and orb or (orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart"))
-                    if part and hasTouch then
-                        firetouchinterest(hrp, part, 0)
-                        firetouchinterest(hrp, part, 1)
-                    end
-                end)
-            end
-        end
-
-        -- 4. Quét nhặt bổ sung các folder phụ chứa item rơi nếu có
-        for _, fName in ipairs({ "Drops", "Items", "Loot" }) do
-            local folder = things:FindFirstChild(fName)
-            if folder then
-                for _, item in ipairs(folder:GetChildren()) do
+                if not processedLootbags[bag] then
+                    processedLootbags[bag] = now
                     pcall(function()
-                        item:PivotTo(pCf)
-                        local part = item:IsA("BasePart") and item or (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart"))
+                        bag:PivotTo(pCf)
+                        local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
                         if part and hasTouch then
                             firetouchinterest(hrp, part, 0)
                             firetouchinterest(hrp, part, 1)
                         end
                     end)
+                    task.delay(0.5, function()
+                        pcall(function()
+                            if bag and bag.Parent then
+                                bag:Destroy()
+                            end
+                        end)
+                    end)
+                end
+            end
+        end
+
+        -- 3. Quét sạch các hạt Orb bị dính chặt vào người do lỗi PivotTo trước đó (< 8 studs quanh người)
+        local orbsFolder = things:FindFirstChild("Orbs")
+        if orbsFolder then
+            for _, orb in ipairs(orbsFolder:GetChildren()) do
+                pcall(function()
+                    local part = orb:IsA("BasePart") and orb or (orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart"))
+                    if part and (part.Position - hrpPos).Magnitude <= 8 then
+                        orb:Destroy()
+                    end
+                end)
+            end
+        end
+
+        -- 4. Dọn rác bảng processedLootbags định kỳ
+        if math.random(1, 40) == 1 then
+            local now = os.clock()
+            for b, t in pairs(processedLootbags) do
+                if now - t > 10 or not b.Parent then
+                    processedLootbags[b] = nil
                 end
             end
         end

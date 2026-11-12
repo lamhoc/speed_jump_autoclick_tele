@@ -397,7 +397,7 @@ local function StartThreads()
     if Config.AutoOpenSlots ~= false then
         SpawnLoop("open slots", function()
             Progression.autoOpenSlots(State)
-        end, 8)
+        end, 1)
     end
 
     -- Tự nhận Free Gifts 12 mốc (60.0s)
