@@ -317,70 +317,79 @@ local function detectNextTierFromGui(filterKeyword)
 end
 
 local function closeAnyMachinePopup()
-    -- 1. Gọi TabController của game nếu có
+    -- 1. Gọi TabController của game (chuẩn Pet Sim 99)
     pcall(function()
         if G and G.TabController then
-            if type(G.TabController.CloseAll) == "function" then
-                G.TabController.CloseAll()
+            if type(G.TabController.CloseTab) == "function" then
+                pcall(G.TabController.CloseTab)
             end
             if type(G.TabController.Close) == "function" then
-                G.TabController.Close("EquipSlotsMachine")
-                G.TabController.Close("EggHatchSlotsMachine")
-                G.TabController.Close("PetEquip")
-                G.TabController.Close("EquipSlots")
-                G.TabController.Close("EggSlots")
+                pcall(G.TabController.Close, "EquipSlotsMachine")
+                pcall(G.TabController.Close, "EggHatchSlotsMachine")
+                pcall(G.TabController.Close, "PetEquip")
+                pcall(G.TabController.Close, "EquipSlots")
+                pcall(G.TabController.Close, "EggSlots")
+                pcall(G.TabController.Close, "Machine")
+            end
+            if type(G.TabController.CloseAll) == "function" then
+                pcall(G.TabController.CloseAll)
             end
         end
     end)
 
-    -- 2. Quét mọi GUI trong PlayerGui để click nút X / Close hoặc ẩn frame máy
+    -- 2. Quét chính xác các Frame popup máy trong PlayerGui để tắt nút X
     pcall(function()
         local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
         if not pgui then return end
         for _, gui in ipairs(pgui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled and not gui.Name:find("KizHub") and not gui.Name:find("Chat") then
+            local gName = gui.Name:lower()
+            if gui:IsA("ScreenGui") and gui.Enabled 
+               and not gName:find("kizhub") 
+               and not gName:find("chat") 
+               and not gName:find("topbar") 
+               and not gName:find("roblox") then
+
                 for _, desc in ipairs(gui:GetDescendants()) do
-                    if (desc:IsA("TextButton") or desc:IsA("ImageButton") or desc:IsA("GuiButton")) and desc.Visible then
-                        local n = desc.Name:lower()
-                        local t = (desc:IsA("TextButton") and desc.Text:lower()) or ""
-                        local isClose = n == "close" or n == "closebutton" or n == "x" or n:find("exit") or n:find("cross") or t == "x"
-                        
-                        -- Nhận diện nút đỏ/hồng ở góc trên (như nút X đóng trong game)
-                        if not isClose and desc.Position.X.Scale > 0.6 and desc.Position.Y.Scale < 0.3 then
-                            local bg = desc.BackgroundColor3
-                            if bg.R > 0.5 and bg.B > 0.2 then
-                                isClose = true
+                    if desc:IsA("Frame") and desc.Visible then
+                        local isMachineWindow = false
+                        for _, child in ipairs(desc:GetDescendants()) do
+                            if child:IsA("TextLabel") and child.Visible then
+                                local txt = child.Text:lower()
+                                if txt:find("équipe") or txt:find("equip") or txt:find("slot") or txt:find("animaux") or txt:find("hatch") or txt:find("trứng") or txt:find("possession") or txt:find("posséd") then
+                                    isMachineWindow = true
+                                    break
+                                end
                             end
                         end
 
-                        if isClose then
-                            triggerGuiClick(desc)
-                        end
-                    end
+                        if isMachineWindow then
+                            for _, btn in ipairs(desc:GetDescendants()) do
+                                if (btn:IsA("TextButton") or btn:IsA("ImageButton")) and btn.Visible then
+                                    local bName = btn.Name:lower()
+                                    local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
+                                    local isClose = bName == "close" or bName == "x" or bName:find("close") or bName:find("exit") or bText == "x"
+                                    
+                                    -- Kiểm tra nếu là nút vuông màu đỏ/hồng ở góc trên
+                                    if not isClose then
+                                        local bg = btn.BackgroundColor3
+                                        local isRedPink = (bg.R > 0.6 and bg.G < 0.4) or (bg.R > 0.7 and bg.B > 0.3)
+                                        if isRedPink and btn.Position.X.Scale > 0.5 then
+                                            isClose = true
+                                        end
+                                    end
 
-                    -- Nếu là Frame chứa popup máy, tự tìm nút close con
-                    if desc:IsA("Frame") and desc.Visible then
-                        local fName = desc.Name:lower()
-                        if fName:find("slot") or fName:find("equip") or fName:find("machine") or fName:find("egg") then
-                            for _, child in ipairs(desc:GetChildren()) do
-                                if (child:IsA("TextButton") or child:IsA("ImageButton") or child:IsA("GuiButton")) and (child.Name:lower():find("close") or child.Name:lower() == "x") then
-                                    triggerGuiClick(child)
+                                    if isClose then
+                                        triggerGuiClick(btn)
+                                        task.delay(0.1, function()
+                                            pcall(function() desc.Visible = false end)
+                                        end)
+                                    end
                                 end
                             end
                         end
                     end
                 end
             end
-        end
-    end)
-
-    -- 3. Gửi phím Escape giả lập để đóng cửa sổ triệt để
-    pcall(function()
-        local vim = game:GetService("VirtualInputManager")
-        if vim and type(vim.SendKeyEvent) == "function" then
-            vim:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
-            task.wait(0.05)
-            vim:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
         end
     end)
 end
