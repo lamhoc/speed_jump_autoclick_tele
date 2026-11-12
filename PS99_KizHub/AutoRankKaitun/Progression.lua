@@ -392,11 +392,13 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
     triggerApproach()
     task.wait(0.5)
 
-    -- 3. Đứng lại tại máy trong 12 giây để mua toàn bộ slot (Chống lỗi server check đứng quá xa)
+    -- 3. Đứng lại tại máy trong 12 giây để mua toàn bộ slot
     local anyBought = false
-    local currentTier = detectNextTierFromGui(filterKeyword) or (state and tierKey and state[tierKey]) or 1
+    local isKnownTier = (state and tierKey and state[tierKey] ~= nil)
+    local currentTier = (isKnownTier and state[tierKey]) or detectNextTierFromGui(filterKeyword) or 1
     local startTime = os.clock()
     local stayDuration = 12 -- Đứng lại 12s theo yêu cầu của dj
+    local unownedFails = 0
 
     while (os.clock() - startTime) < stayDuration do
         -- Khóa giữ chặt CFrame trước mặt máy chống bị trôi hoặc đẩy văng
@@ -408,41 +410,41 @@ local function buySlotsAtMachine(machName, filterKeyword, remoteName, fallbackUp
         end
 
         local gems = Net.currency("Diamonds")
-        if gems >= 25 then
-            -- Thử gọi trực tiếp InvokeServer với currentTier
-            local ok, res = Net.netInvoke(remoteName, currentTier)
-            print(string.format("[KizHub Slot] %s tier %d -> ok: %s, res: %s", remoteName, currentTier, tostring(ok), tostring(res)))
-
-            if ok and res ~= false then
-                anyBought = true
-                currentTier = currentTier + 1
-                if state and tierKey then
-                    state[tierKey] = currentTier
-                end
-                task.wait(0.3)
-            else
-                -- Thử fallback click UI trực tiếp
-                local clicked = clickBuyButtonsInGui(filterKeyword)
-                if clicked then
-                    task.wait(0.4)
-                    local detected = detectNextTierFromGui(filterKeyword)
-                    if detected and detected > currentTier then
-                        currentTier = detected
-                        if state and tierKey then
-                            state[tierKey] = currentTier
-                        end
-                        anyBought = true
-                    end
-                else
-                    -- Kích hoạt lại tương tác phòng trường hợp server ngắt session
-                    triggerApproach()
-                    task.wait(0.4)
-                end
-            end
-        else
-            task.wait(0.5)
+        if gems < 25 then
+            break
         end
-        task.wait(0.3)
+
+        -- Thử gọi trực tiếp InvokeServer với currentTier
+        local ok, res = Net.netInvoke(remoteName, currentTier)
+        print(string.format("[KizHub Slot] %s tier %d -> ok: %s, res: %s", remoteName, currentTier, tostring(ok), tostring(res)))
+
+        if ok and res ~= false then
+            -- Mua thành công tier này!
+            anyBought = true
+            currentTier = currentTier + 1
+            if state and tierKey then
+                state[tierKey] = currentTier
+            end
+            task.wait(0.25)
+        else
+            -- Mua không được tier này:
+            if anyBought then
+                -- Nếu chuyến này ĐÃ mua được ít nhất 1 tier trước đó mà tier này fail
+                -- -> Đã chạm mốc tối đa (hết kim cương hoặc chạm khóa rank) -> Dừng ngay!
+                break
+            else
+                -- Chưa mua được tier nào: tier này ĐÃ ĐƯỢC MUA TỪ TRƯỚC (như tier 1, 2, 3...)
+                -- Tăng dần tier lên (tier + 1) để tìm tier tiếp theo chưa mua
+                currentTier = currentTier + 1
+                unownedFails = unownedFails + 1
+                
+                -- Nếu đã thử tăng liên tiếp 30 tier mà vẫn không mua được -> Dừng tránh spam vô tận
+                if unownedFails >= 30 then
+                    break
+                end
+                task.wait(0.08)
+            end
+        end
     end
 
     -- 4. Đóng giao diện UI máy
