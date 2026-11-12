@@ -75,6 +75,7 @@ local G = {
     PlayerPet                   = req("Library.Client.PlayerPet"),
     PetCmds                     = req("Library.Client.PetCmds"),
     BreakableFrontend           = req("Library.Client.BreakableFrontend"),
+    OrbCmds                     = req("Library.Client.OrbCmds", true),
 
     -- Currency & Economy
     CurrencyCmds                = req("Library.Client.CurrencyCmds"),

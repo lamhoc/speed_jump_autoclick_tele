@@ -60,18 +60,38 @@ end
 
 function QuestFarm.BestZoneId()
     local now = os.clock()
-    if Cache.ZoneId and now - Cache.ZoneAt < 10 then
+    if Cache.ZoneId and now - Cache.ZoneAt < 5 then
         return Cache.ZoneId
     end
+
+    local id = nil
     if Net.isfn(G.ZoneCmds, "GetMaxOwnedZone") then
-        local id = Net.gval(G.ZoneCmds.GetMaxOwnedZone)
+        id = Net.gval(G.ZoneCmds.GetMaxOwnedZone)
         if type(id) == "table" then id = id._id end
-        if type(id) == "string" then
-            Cache.ZoneId = id
-            Cache.ZoneAt = now
-            Cache.Zone = type(G.Zones) == "table" and G.Zones[id] or nil
+    end
+
+    if type(id) ~= "string" and Net.isfn(G.MapCmds, "GetCurrentZone") then
+        local cz = Net.gval(G.MapCmds.GetCurrentZone)
+        if type(cz) == "string" and #cz > 0 then id = cz end
+    end
+
+    if type(id) ~= "string" then
+        local save = Net.getSave()
+        if type(save) == "table" then
+            if type(save.MaximumZone) == "string" then
+                id = save.MaximumZone
+            elseif type(save.UnlockedZones) == "table" then
+                for zName in pairs(save.UnlockedZones) do
+                    id = zName
+                end
+            end
         end
     end
+
+    id = id or "Spawn"
+    Cache.ZoneId = id
+    Cache.ZoneAt = now
+    Cache.Zone = type(G.Zones) == "table" and G.Zones[id] or nil
     return Cache.ZoneId
 end
 
@@ -82,7 +102,17 @@ end
 
 function QuestFarm.BestZoneName()
     local z = QuestFarm.BestZone()
-    return (z and (z.ZoneName or z._id)) or QuestFarm.BestZoneId() or "?"
+    local name = (z and (z.ZoneName or z._id)) or QuestFarm.BestZoneId()
+    if not name or name == "?" then
+        if Net.isfn(G.MapCmds, "GetCurrentZone") then
+            local cz = Net.gval(G.MapCmds.GetCurrentZone)
+            if type(cz) == "string" and #cz > 0 then
+                local dirZ = type(G.Zones) == "table" and G.Zones[cz]
+                name = (dirZ and (dirZ.ZoneName or dirZ._id)) or cz
+            end
+        end
+    end
+    return name or "Spawn"
 end
 
 function QuestFarm.ZoneArrivalPosition(ZoneId)
@@ -491,7 +521,7 @@ end
 local orbMapCache = nil
 function QuestFarm.findOrbMap()
     if type(orbMapCache) == "table" then return orbMapCache end
-    local ok, map = Net.gcall(function()
+    local ok, map = pcall(function()
         local RS = game:GetService("ReplicatedStorage")
         local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds")
         if not mod then return nil end
@@ -499,34 +529,50 @@ function QuestFarm.findOrbMap()
         local fn = nil
         if type(getsenv) == "function" then
             local env = getsenv(mod)
-            if type(env) == "table" and type(env.ProcessCreate) == "function" then
-                fn = env.ProcessCreate
+            if type(env) == "table" then
+                fn = env.ProcessCreate or env.Create or env.Spawn or env.Collect
             end
         end
 
         if type(fn) ~= "function" and type(getgc) == "function" then
             for _, f in ipairs(getgc(false)) do
-                if type(f) == "function" and debug.info(f, "n") == "ProcessCreate" then
-                    fn = f
-                    break
+                if type(f) == "function" then
+                    local n = debug.info(f, "n")
+                    if n == "ProcessCreate" or n == "Create" or n == "Collect" then
+                        fn = f
+                        break
+                    end
                 end
             end
         end
 
-        if type(fn) ~= "function" then return nil end
-        if type(debug.getupvalues) ~= "function" then return nil end
-
-        for _, up in pairs(debug.getupvalues(fn)) do
-            if type(up) == "table" then
-                local strKeys = false
-                for k in pairs(up) do
-                    if type(k) == "string" then
-                        strKeys = true
-                        break
+        if type(fn) == "function" and type(debug.getupvalues) == "function" then
+            for _, up in pairs(debug.getupvalues(fn)) do
+                if type(up) == "table" then
+                    for _, v in pairs(up) do
+                        if type(v) == "table" and (type(v.Collect) == "function" or v._collected ~= nil or v._destroyed ~= nil) then
+                            return up
+                        end
+                    end
+                    local hasFunc = false
+                    for _, v in pairs(up) do
+                        if type(v) == "function" then hasFunc = true break end
+                    end
+                    if not hasFunc and next(up) ~= nil then
+                        return up
                     end
                 end
-                if not strKeys then
-                    return up
+            end
+        end
+
+        if type(getgc) == "function" then
+            for _, t in ipairs(getgc(true)) do
+                if type(t) == "table" then
+                    for _, v in pairs(t) do
+                        if type(v) == "table" and type(v.Collect) == "function" and (v._collected ~= nil or v._destroyed ~= nil) then
+                            return t
+                        end
+                    end
                 end
             end
         end
@@ -541,7 +587,7 @@ end
 function QuestFarm.CollectOrbsTick(state)
     if not state or not state.Alive or not state.Enabled then return end
 
-    -- 1. Thu thập Orbs sạch thông qua client-side OrbCmds (không can thiệp CFrame vật lý tránh lỗi kẹt hạt quanh người)
+    -- 1. Thu thập Orbs client-side thông qua OrbCmds table (Nhanh, không lag)
     pcall(function()
         local map = QuestFarm.findOrbMap()
         if type(map) == "table" then
@@ -557,7 +603,30 @@ function QuestFarm.CollectOrbsTick(state)
         end
     end)
 
-    -- 2. Hút Lootbags (túi quà rơi) về nhân vật
+    -- 2. Quét nhặt vật lý Orbs trong workspace.__THINGS.Orbs (Bằng firetouchinterest, KHÔNG ĐỔI CFRAME)
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local things = workspace:FindFirstChild("__THINGS")
+        local orbsFolder = things and things:FindFirstChild("Orbs")
+        if not orbsFolder then return end
+
+        local hrpPos = hrp.Position
+        if type(firetouchinterest) == "function" then
+            for _, orb in ipairs(orbsFolder:GetChildren()) do
+                pcall(function()
+                    local part = orb:IsA("BasePart") and orb or (orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart"))
+                    if part and (part.Position - hrpPos).Magnitude <= 120 then
+                        firetouchinterest(hrp, part, 0)
+                        firetouchinterest(hrp, part, 1)
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- 3. Hút Lootbags (túi quà rơi) về nhân vật
     pcall(function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")

@@ -105,6 +105,7 @@ end
 -- 1. Nạp Shared Modules
 local Modules       = import("Shared/Modules.lua")
 local Network       = import("Shared/Network.lua")
+local Net           = Network
 local EngineOptim   = import("Shared/EngineOptim.lua")
 local AntiAFK       = import("Shared/AntiAFK.lua")
 local Webhook       = import("Shared/Webhook.lua")
@@ -392,8 +393,8 @@ local function StartThreads()
         State.StarterPetsPicked = true
     end)
 
-    -- [TẮT THEO YÊU CẦU]: Không mua slot pet hay egg
-    if Config.AutoOpenSlots == true then
+    -- Tự động mua slot pet và egg
+    if Config.AutoOpenSlots ~= false then
         SpawnLoop("open slots", function()
             Progression.autoOpenSlots(State)
         end, 15)

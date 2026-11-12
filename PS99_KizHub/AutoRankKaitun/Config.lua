@@ -49,7 +49,7 @@ local Config = {
 
     -- Tự động hóa tài khoản mới & Nâng cấp
     AutoPickStarterPets = true,   -- Tự chọn 2 pet starter cho acc mới
-    AutoOpenSlots = false,        -- [TẮT]: Không mua slot pet hay slot hatch trứng bằng Gems
+    AutoOpenSlots = true,         -- Tự động mua slot pet và slot hatch trứng bằng Gems
     AutoClaimFreeGifts = true,    -- Tự nhận 12 mốc quà Free Gifts định kỳ
 
     -- Discord Webhook Notifications
