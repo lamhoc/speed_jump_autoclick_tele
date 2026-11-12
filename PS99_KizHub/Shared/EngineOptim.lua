@@ -73,6 +73,13 @@ function EngineOptim.purgeHeavyVisuals()
         local things = workspace:FindFirstChild("__THINGS")
         if things then
             -- TUYỆT ĐỐI KHÔNG xóa folder Pets hoặc Highlight của Pets (tránh lỗi Infinite yield trên PetCmds và tự tháo pet)
+            local pets = things:FindFirstChild("Pets")
+            if pets and not pets:FindFirstChild("Highlight") then
+                local hl = Instance.new("Highlight")
+                hl.Name = "Highlight"
+                hl.Parent = pets
+            end
+
             -- TUYỆT ĐỐI KHÔNG xóa folder Orbs để tránh triệt tiêu ngọc trước khi bot hút kịp
             local dmg = things:FindFirstChild("DamageNumbers")
             if dmg then

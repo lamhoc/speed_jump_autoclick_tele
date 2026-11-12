@@ -24,6 +24,34 @@ local function gcall(fn, ...)
     return table.unpack(r, 1, r.n)
 end
 
+-- Bảo vệ chống Infinite yield possible on 'Workspace.__THINGS.Pets:WaitForChild("Highlight")'
+local function ensurePetHighlight()
+    pcall(function()
+        local things = workspace:FindFirstChild("__THINGS")
+        if not things then
+            task.spawn(function()
+                things = workspace:WaitForChild("__THINGS", 5)
+                if things then
+                    local pets = things:FindFirstChild("Pets") or things:WaitForChild("Pets", 5)
+                    if pets and not pets:FindFirstChild("Highlight") then
+                        local hl = Instance.new("Highlight")
+                        hl.Name = "Highlight"
+                        hl.Parent = pets
+                    end
+                end
+            end)
+        else
+            local pets = things:FindFirstChild("Pets") or things:WaitForChild("Pets", 2)
+            if pets and not pets:FindFirstChild("Highlight") then
+                local hl = Instance.new("Highlight")
+                hl.Name = "Highlight"
+                hl.Parent = pets
+            end
+        end
+    end)
+end
+ensurePetHighlight()
+
 -- Wrapper require an toàn qua ReplicatedStorage
 local function req(path, optional)
     local ok, mod = gcall(function()

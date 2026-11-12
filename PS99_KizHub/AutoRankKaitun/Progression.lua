@@ -223,12 +223,42 @@ function Progression.autoOpenSlots(state)
             if ok2 and res2 ~= false then bought = true end
         end
         if not bought then
-            pcall(function() Net.netFire("EquipSlotsMachine_RequestPurchase", 1) end)
             local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "PetSlots")
             if okFb and resFb ~= false then bought = true end
         end
+
+        -- Tự click nút Mua trong PlayerGui nếu giao diện đang mở trên màn hình
+        pcall(function()
+            local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            if not pgui then return end
+            for _, gui in ipairs(pgui:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Enabled then
+                    local gName = gui.Name:lower()
+                    if gName:find("slot") or gName:find("equip") or gName:find("machine") then
+                        for _, btn in ipairs(gui:GetDescendants()) do
+                            if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+                                local bName = btn.Name:lower()
+                                local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
+                                if bName:find("buy") or bName:find("purchase") or bText:find("buy") or bText:find("purchase") or bText:find("💎") then
+                                    if type(getconnections) == "function" then
+                                        for _, c in ipairs(getconnections(btn.Activated) or {}) do
+                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                        end
+                                        for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
+                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                        end
+                                    end
+                                    bought = true
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
         if not bought then break end
-        task.wait(0.15)
+        task.wait(0.2)
     end
 
     -- 2.4 Mua Slot Trứng (Chạy độc lập, thử tối đa 10 lần liên tiếp)
@@ -241,13 +271,68 @@ function Progression.autoOpenSlots(state)
             if ok2 and res2 ~= false then bought = true end
         end
         if not bought then
-            pcall(function() Net.netFire("EggHatchSlotsMachine_RequestPurchase", 1) end)
             local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "EggSlots")
             if okFb and resFb ~= false then bought = true end
         end
+
+        -- Tự click nút Mua Slot Trứng trong PlayerGui nếu có
+        pcall(function()
+            local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+            if not pgui then return end
+            for _, gui in ipairs(pgui:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Enabled then
+                    local gName = gui.Name:lower()
+                    if gName:find("egg") or gName:find("slot") or gName:find("hatch") then
+                        for _, btn in ipairs(gui:GetDescendants()) do
+                            if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+                                local bName = btn.Name:lower()
+                                local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
+                                if bName:find("buy") or bName:find("purchase") or bText:find("buy") or bText:find("purchase") or bText:find("💎") then
+                                    if type(getconnections) == "function" then
+                                        for _, c in ipairs(getconnections(btn.Activated) or {}) do
+                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                        end
+                                        for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
+                                            if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                        end
+                                    end
+                                    bought = true
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
         if not bought then break end
-        task.wait(0.15)
+        task.wait(0.2)
     end
+
+    -- 2.5 Tự động đóng các giao diện popup mua slot trên màn hình
+    pcall(function()
+        local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if not pgui then return end
+        for _, gui in ipairs(pgui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                local gName = gui.Name:lower()
+                if gName:find("slot") or gName:find("equip") or gName:find("machine") then
+                    for _, closeBtn in ipairs(gui:GetDescendants()) do
+                        if closeBtn:IsA("TextButton") or closeBtn:IsA("ImageButton") then
+                            local cName = closeBtn.Name:lower()
+                            if cName == "close" or cName == "x" or cName:find("exit") then
+                                if type(getconnections) == "function" then
+                                    for _, c in ipairs(getconnections(closeBtn.Activated) or {}) do
+                                        if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
 
     -- 2.5 Dịch chuyển quay lại vị trí farm bãi ban đầu
     if needTeleport and origPos then

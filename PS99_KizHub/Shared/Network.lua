@@ -132,14 +132,17 @@ function NetworkHelper.currency(id)
     end
     local s = NetworkHelper.getSave()
     if type(s) == "table" then
+        if type(s[id]) == "number" then
+            return s[id]
+        end
         if type(s.Currency) == "table" and type(s.Currency[id]) == "number" then
             return s.Currency[id]
         end
         local cur = s.Inventory and s.Inventory.Currency
         if type(cur) == "table" then
             for _, v in pairs(cur) do
-                if type(v) == "table" and v.id == id then
-                    return tonumber(v._am) or 0
+                if type(v) == "table" and (v.id == id or v._id == id) then
+                    return tonumber(v._am or v.Amount) or 0
                 end
             end
         end

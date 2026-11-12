@@ -242,63 +242,47 @@ local function SpawnLoop(name, tickFn, intervalFn)
     end)
 end
 
--- Cập nhật GUI Dashboard (Chuẩn 100% phong cách KizHub với 👑 & 4 Quests Progress Bars)
+-- Cập nhật GUI Dashboard (Chuẩn 100% phong cách Frost Hub với 👑 Kiz Hub & 4 Quests Progress Bars)
 local function updateRankGui()
     if not ui then return end
     pcall(function()
         local elapsed = math.floor(os.clock() - State.StartedAt)
         if ui.ElapsedLabel then
-            ui.ElapsedLabel.Text = string.format("⏱️ %02d:%02d:%02d", math.floor(elapsed / 3600), math.floor(elapsed / 60) % 60, elapsed % 60)
+            ui.ElapsedLabel.Text = string.format("%02d:%02d:%02d", math.floor(elapsed / 3600), math.floor(elapsed / 60) % 60, elapsed % 60)
         end
 
         local info = State.Rank
         local rNum = info and info.rankNumber or 1
-        local rTitle = info and tostring(info.title or "") or "Rank " .. rNum
+        local rTitle = info and tostring(info.title or "") or ("Rank " .. rNum)
         local stars = info and info.stars or 0
         local totalStars = info and math.max(1, info.totalStars) or 1
         local starPct = (stars / totalStars) * 100
-
-        if ui.RankValue then
-            ui.RankValue.Text = string.format("RANK %d • %s", rNum, rTitle:upper())
-        end
-
         local targetRank = Config.TargetRank or 11
-        if ui.TargetRankLabel then
-            if rNum >= targetRank then
-                ui.TargetRankLabel.Text = "👑 ĐÃ ĐẠT RANK 11!"
-                ui.TargetRankLabel.TextColor3 = Color3.fromRGB(0, 255, 170)
-                if ui.StatusText then
-                    ui.StatusText.Text = "👑 COMPLETED"
-                    ui.StatusText.TextColor3 = Color3.fromRGB(255, 215, 0)
-                end
-            else
-                ui.TargetRankLabel.Text = string.format("Mục tiêu: Rank %d (Còn %d)", targetRank, math.max(0, targetRank - rNum))
-                ui.TargetRankLabel.TextColor3 = Color3.fromRGB(150, 165, 190)
-            end
+        local zoneName = tostring(QuestFarm.BestZoneName() or "Spawn")
+
+        if ui.MainRow then
+            ui.MainRow.Text = string.format("Rank %d (%s) · %s · World 1", rNum, rTitle, zoneName)
         end
 
         if ui.StarsLabel then
-            ui.StarsLabel.Text = string.format("⭐ Sao: %s / %s (%.1f%%)", Net.int(stars), Net.int(totalStars), starPct)
+            ui.StarsLabel.Text = string.format("⭐ Sao: %s / %s (%.1f%%)  |  Mục tiêu: Rank %d", Net.int(stars), Net.int(totalStars), starPct, targetRank)
         end
 
-        if ui.StarBarFill then
-            ui.StarBarFill.Size = UDim2.fromScale(math.clamp(stars / totalStars, 0, 1), 1)
+        local coins = Net.currency("Coins")
+        local diamonds = Net.currency("Diamonds")
+        if ui.CoinsLabel then
+            ui.CoinsLabel.Text = string.format("💰 Xu: %s  |  💎 Gems: %s", Net.shorten(coins), Net.shorten(diamonds))
         end
 
         if ui.RankSubStats then
             local redeemed = info and info.redeemedCount or 0
             local totalRewards = info and (type(info.rewards) == "table" and #info.rewards or 0) or 0
             local rebirths = info and info.rebirths or 0
-            local statusDesc = (rNum >= targetRank) and "Hoàn thành" or "Cày sao"
-            ui.RankSubStats.Text = string.format("🎁 Quà: %d/%d  |  🔄 Rebirth: %d  |  ⚡ %s", redeemed, totalRewards, rebirths, statusDesc)
-        end
-
-        if ui.ZoneLabel then
-            ui.ZoneLabel.Text = string.format("Zone: %s (World 1)", tostring(QuestFarm.BestZoneName() or "?"))
+            ui.RankSubStats.Text = string.format("🥚 Trứng: %s  |  🎁 Quà: %d/%d  |  🔄 Rebirth: %d", Net.shorten(State.Counters.Hatched or 0), redeemed, totalRewards, rebirths)
         end
 
         if ui.ActionLabel then
-            ui.ActionLabel.Text = string.format("Hành động: %s", tostring(State.Action or "Farming"))
+            ui.ActionLabel.Text = string.format("Doing: %s", tostring(State.Action or "Farming bãi vỡ"))
         end
 
         -- 4 Hàng Nhiệm vụ Rank trực tiếp kèm thanh phần trăm nạp
@@ -322,18 +306,6 @@ local function updateRankGui()
                     end
                 end
             end
-        end
-
-        -- Thống kê hoạt động
-        if ui.TotalsLabel then
-            local coins = Net.currency("Coins")
-            local diamonds = Net.currency("Diamonds")
-            ui.TotalsLabel.Text = string.format(
-                "💰 Xu: %s  |  💎 Gems: %s  |  🥚 Trứng: %s",
-                Net.shorten(coins),
-                Net.shorten(diamonds),
-                Net.shorten(State.Counters.Hatched or 0)
-            )
         end
     end)
 end
