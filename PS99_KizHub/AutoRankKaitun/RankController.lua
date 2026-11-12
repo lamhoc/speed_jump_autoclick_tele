@@ -435,49 +435,56 @@ function RankController.BuildPlan(state)
         end
     end
 
-    -- Logic NewZoneHatch: Khi đi đến map mới, chỉ mở egg nếu người chơi CÓ ĐỦ COINS mua ít nhất 1 quả trứng
+    -- Logic NewZoneHatch: Tích lũy đủ thời lượng (5 phút = 300s) mở trứng tại map mới. Nếu thiếu coin sẽ farm bãi và tự động gọi lại mở tiếp
     local currentZoneId = BestZoneIdFn and BestZoneIdFn() or nil
     local nzCfg = Config.NewZoneHatch
     if nzCfg and nzCfg.Enabled ~= false and currentZoneId and type(currentZoneId) == "string" then
         state.ZoneHatchDone = state.ZoneHatchDone or {}
+        state.ZoneHatchProgress = state.ZoneHatchProgress or {}
+        local targetDuration = tonumber(nzCfg.Duration) or 300
+
         if not state.ZoneHatchDone[currentZoneId] then
-            local egg = BestEggFn and BestEggFn()
-            local canAffordEgg = false
-            if egg and egg.id then
-                local unitPrice = Net.gval(G.CalcEggPricePlayer, egg.dir)
-                local cur = (egg.dir and egg.dir.currency) or "Coins"
-                local bal = Net.currency(cur)
-                if type(unitPrice) == "number" and unitPrice > 0 and bal >= unitPrice then
-                    canAffordEgg = true
-                end
+            local prog = state.ZoneHatchProgress[currentZoneId]
+            if not prog then
+                prog = { TimeSpent = 0, LastActiveAt = 0 }
+                state.ZoneHatchProgress[currentZoneId] = prog
             end
 
-            if canAffordEgg then
-                if not state.NewZoneHatchSession or state.NewZoneHatchSession.ZoneId ~= currentZoneId then
-                    state.NewZoneHatchSession = {
-                        ZoneId = currentZoneId,
-                        StartedAt = os.clock(),
-                        Duration = tonumber(nzCfg.Duration) or 180,
-                    }
-                end
+            -- Cộng dồn thời gian mở trứng khi bot đang thực sự đứng mở trứng
+            local isCurrentlyHatching = (state.HatchSession == true)
+            if isCurrentlyHatching and prog.LastActiveAt > 0 then
+                local dt = math.clamp(os.clock() - prog.LastActiveAt, 0, 3)
+                prog.TimeSpent = prog.TimeSpent + dt
+            end
+            prog.LastActiveAt = os.clock()
 
-                local elapsed = os.clock() - state.NewZoneHatchSession.StartedAt
-                local remainingSec = math.max(0, math.ceil(state.NewZoneHatchSession.Duration - elapsed))
-                if remainingSec > 0 then
+            local remainingSec = math.max(0, math.ceil(targetDuration - prog.TimeSpent))
+            if remainingSec <= 0 then
+                state.ZoneHatchDone[currentZoneId] = true
+                state.NewZoneHatchSession = nil
+            else
+                local egg = BestEggFn and BestEggFn()
+                local unitPrice = 0
+                local cur = "Coins"
+                if egg and egg.dir then
+                    unitPrice = Net.gval(G.CalcEggPricePlayer, egg.dir) or 0
+                    cur = egg.dir.currency or "Coins"
+                end
+                local bal = Net.currency(cur)
+
+                -- Điều kiện đủ tiền: Đang mở thì chỉ cần >= 1 quả; Nếu đang farm bãi quay lại thì gom đủ ít nhất 3 quả
+                local minCoinsRequired = isCurrentlyHatching and unitPrice or (unitPrice * 3)
+                local canAfford = (unitPrice > 0 and bal >= minCoinsRequired) or (unitPrice == 0 and bal > 0)
+
+                if canAfford then
                     Plan.Hatch = true
                     Plan.HatchEggOnly = true
                     Plan.NewZoneSession = true
                     table.insert(Plan.HatchReasons, string.format("New Zone Egg (%ds left)", remainingSec))
-                    parts[#parts + 1] = string.format("Hatching New Zone %s (%ds)", currentZoneId, remainingSec)
+                    parts[#parts + 1] = string.format("Hatching New Zone %s (%ds/%ds)", currentZoneId, math.floor(prog.TimeSpent), targetDuration)
                 else
-                    state.ZoneHatchDone[currentZoneId] = true
-                    state.NewZoneHatchSession = nil
-                end
-            else
-                -- Không đủ tiền mở egg: KHÔNG ép Hatch, kết thúc session để bot chuyên tâm cày coin ở bãi
-                if state.NewZoneHatchSession and state.NewZoneHatchSession.ZoneId == currentZoneId then
-                    state.ZoneHatchDone[currentZoneId] = true
-                    state.NewZoneHatchSession = nil
+                    -- Không đủ coin: Tạm dừng mở trứng, bot tự động farm bãi gom coin rồi quay lại mở tiếp cho đủ 5 phút
+                    parts[#parts + 1] = string.format("Farm coin chờ mở egg (%ds/%ds) [%s/%s %s]", math.floor(prog.TimeSpent), targetDuration, Net.shorten(bal), Net.shorten(minCoinsRequired), cur)
                 end
             end
         end

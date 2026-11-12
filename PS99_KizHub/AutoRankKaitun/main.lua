@@ -397,7 +397,7 @@ local function StartThreads()
     if Config.AutoOpenSlots ~= false then
         SpawnLoop("open slots", function()
             Progression.autoOpenSlots(State)
-        end, 15)
+        end, 8)
     end
 
     -- Tự nhận Free Gifts 12 mốc (60.0s)
@@ -423,11 +423,11 @@ local function StartThreads()
         pcall(function() QuestFarm.installMaxPetSpeed(State) end)
     end
 
-    -- [3. Orb Collector]: Tự động quét và hút sạch ngọc & lootbags rơi (0.35s)
+    -- [3. Orb Collector]: Tự động quét và hút sạch ngọc & lootbags rơi (0.25s)
     if Config.AutoCollectOrbs ~= false then
         SpawnLoop("collect orbs", function()
             QuestFarm.CollectOrbsTick(State)
-        end, function() return Config.OrbCollectInterval or 0.35 end)
+        end, function() return Config.OrbCollectInterval or 0.25 end)
     end
 
     -- [4. Disable Egg Animation]: Bỏ qua cutscene ấp trứng

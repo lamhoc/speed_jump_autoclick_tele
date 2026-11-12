@@ -603,50 +603,59 @@ function QuestFarm.CollectOrbsTick(state)
         end
     end)
 
-    -- 2. Quét nhặt vật lý Orbs trong workspace.__THINGS.Orbs (Bằng firetouchinterest, KHÔNG ĐỔI CFRAME)
+    -- 2. Hút sạch Lootbags & Túi quà rơi về nhân vật (Sử dụng PivotTo + FireTouchInterest)
     pcall(function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
         local things = workspace:FindFirstChild("__THINGS")
-        local orbsFolder = things and things:FindFirstChild("Orbs")
-        if not orbsFolder then return end
+        if not things then return end
+        local pCf = hrp.CFrame
+        local hasTouch = (type(firetouchinterest) == "function")
 
-        local hrpPos = hrp.Position
-        if type(firetouchinterest) == "function" then
-            for _, orb in ipairs(orbsFolder:GetChildren()) do
+        local lootbagsFolder = things:FindFirstChild("Lootbags")
+        if lootbagsFolder then
+            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
                 pcall(function()
-                    local part = orb:IsA("BasePart") and orb or (orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart"))
-                    if part and (part.Position - hrpPos).Magnitude <= 120 then
+                    bag:PivotTo(pCf)
+                    local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
+                    if part and hasTouch then
                         firetouchinterest(hrp, part, 0)
                         firetouchinterest(hrp, part, 1)
                     end
                 end)
             end
         end
-    end)
 
-    -- 3. Hút Lootbags (túi quà rơi) về nhân vật
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        local hrpPos = hrp.Position
-        local things = workspace:FindFirstChild("__THINGS")
-        if not things then return end
-
-        local lootbagsFolder = things:FindFirstChild("Lootbags")
-        if lootbagsFolder then
-            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
+        -- 3. Hút sạch Orbs & Tiền / Kim cương rơi
+        local orbsFolder = things:FindFirstChild("Orbs")
+        if orbsFolder then
+            for _, orb in ipairs(orbsFolder:GetChildren()) do
                 pcall(function()
-                    local part = bag:IsA("BasePart") and bag or (bag.PrimaryPart or bag:FindFirstChildWhichIsA("BasePart"))
-                    if part and (part.Position - hrpPos).Magnitude <= 100 then
-                        if type(firetouchinterest) == "function" then
+                    orb:PivotTo(pCf)
+                    local part = orb:IsA("BasePart") and orb or (orb.PrimaryPart or orb:FindFirstChildWhichIsA("BasePart"))
+                    if part and hasTouch then
+                        firetouchinterest(hrp, part, 0)
+                        firetouchinterest(hrp, part, 1)
+                    end
+                end)
+            end
+        end
+
+        -- 4. Quét nhặt bổ sung các folder phụ chứa item rơi nếu có
+        for _, fName in ipairs({ "Drops", "Items", "Loot" }) do
+            local folder = things:FindFirstChild(fName)
+            if folder then
+                for _, item in ipairs(folder:GetChildren()) do
+                    pcall(function()
+                        item:PivotTo(pCf)
+                        local part = item:IsA("BasePart") and item or (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart"))
+                        if part and hasTouch then
                             firetouchinterest(hrp, part, 0)
                             firetouchinterest(hrp, part, 1)
                         end
-                    end
-                end)
+                    end)
+                end
             end
         end
     end)

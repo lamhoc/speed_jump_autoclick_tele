@@ -152,47 +152,85 @@ function Progression.autoOpenSlots(state)
     if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
 
     local now = os.clock()
-    if now - (state.LastSlotPurchaseAt or 0) < 8 then return end
+    if now - (state.LastSlotPurchaseAt or 0) < 6 then return end
     state.LastSlotPurchaseAt = now
 
-    -- Kích hoạt Proximity của cả 2 máy nâng cấp slot (cả dạng Model và dạng Tên)
+    local gems = Net.currency("Diamonds")
+    if gems < 100 then return end
+
+    -- 2.1 Kích hoạt Proximity của cả 2 máy nâng cấp slot
     pcall(function()
         Net.netFire("Machines: Mark Approached", "EquipSlotsMachine")
         Net.netFire("Machines: Mark Approached", "EggHatchSlotsMachine")
+
+        if Net.isfn(G.MachineCmds, "GetModels") then
+            local ok1, mods1 = Net.gcall(G.MachineCmds.GetModels, "EquipSlotsMachine")
+            if ok1 and type(mods1) == "table" then
+                for _, m in pairs(mods1) do
+                    if typeof(m) == "Instance" then
+                        Net.netFire("Machines: Mark Approached", m)
+                        Net.netFire("Machines: Mark Approached", m.Name)
+                    end
+                end
+            end
+            local ok2, mods2 = Net.gcall(G.MachineCmds.GetModels, "EggHatchSlotsMachine")
+            if ok2 and type(mods2) == "table" then
+                for _, m in pairs(mods2) do
+                    if typeof(m) == "Instance" then
+                        Net.netFire("Machines: Mark Approached", m)
+                        Net.netFire("Machines: Mark Approached", m.Name)
+                    end
+                end
+            end
+        end
+
         local machFolder = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Machines")
         if machFolder then
-            local m1 = machFolder:FindFirstChild("EquipSlotsMachine")
-            local m2 = machFolder:FindFirstChild("EggHatchSlotsMachine")
-            if m1 then Net.netFire("Machines: Mark Approached", m1) end
-            if m2 then Net.netFire("Machines: Mark Approached", m2) end
+            for _, m in ipairs(machFolder:GetChildren()) do
+                local n = m.Name
+                if n:find("Equip") or n:find("Egg") or n:find("Slot") then
+                    Net.netFire("Machines: Mark Approached", m)
+                    Net.netFire("Machines: Mark Approached", n)
+                end
+            end
         end
     end)
     task.wait(0.1)
 
-    -- Mua Slot Pet
+    -- 2.2 Mua Slot Pet (Thử tối đa 5 lần mỗi nhịp)
     for _ = 1, 5 do
+        local bought = false
         local ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase", 1)
-        if not ok or res == false then
-            ok, res = Net.netInvoke("EquipSlotsMachine_RequestPurchase")
+        if ok and res ~= false then bought = true end
+        if not bought then
+            local ok2, res2 = Net.netInvoke("EquipSlotsMachine_RequestPurchase")
+            if ok2 and res2 ~= false then bought = true end
         end
-        if not ok or res == false then
+        if not bought then
+            pcall(function() Net.netFire("EquipSlotsMachine_RequestPurchase", 1) end)
             local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "PetSlots")
-            if not okFb or resFb == false then break end
+            if okFb and resFb ~= false then bought = true end
         end
-        task.wait(0.15)
+        if not bought then break end
+        task.wait(0.2)
     end
 
-    -- Mua Slot Trứng
+    -- 2.3 Mua Slot Trứng (Chạy độc lập, không bị bỏ qua nếu Slot Pet chưa đủ gem hay max)
     for _ = 1, 5 do
+        local bought = false
         local ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase", 1)
-        if not ok or res == false then
-            ok, res = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase")
+        if ok and res ~= false then bought = true end
+        if not bought then
+            local ok2, res2 = Net.netInvoke("EggHatchSlotsMachine_RequestPurchase")
+            if ok2 and res2 ~= false then bought = true end
         end
-        if not ok or res == false then
+        if not bought then
+            pcall(function() Net.netFire("EggHatchSlotsMachine_RequestPurchase", 1) end)
             local okFb, resFb = Net.netInvoke("Upgrades_Purchase", "EggSlots")
-            if not okFb or resFb == false then break end
+            if okFb and resFb ~= false then bought = true end
         end
-        task.wait(0.15)
+        if not bought then break end
+        task.wait(0.2)
     end
 end
 

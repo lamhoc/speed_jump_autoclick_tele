@@ -271,9 +271,6 @@ function QuestHatch.HatchTick(state)
         state.HatchSession = false
         state.Hopping = false
         HatchBackoffUntil = os.clock() + 3
-        if state.NewZoneHatchSession then
-            state.NewZoneHatchSession = nil
-        end
         return
     end
 
