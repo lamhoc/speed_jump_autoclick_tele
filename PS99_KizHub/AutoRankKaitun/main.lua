@@ -385,15 +385,6 @@ local function StartThreads()
         end)
     end)
 
-    -- Tự động kiểm tra mua slot pet và egg định kỳ (15s)
-    if Config.AutoOpenSlots ~= false then
-        SpawnLoop("open slots", function()
-            if State.InitialSetupDone then
-                Progression.autoOpenSlots(State)
-            end
-        end, 15)
-    end
-
     -- Tự nhận Free Gifts 12 mốc (60.0s)
     SpawnLoop("free gifts", function()
         Progression.checkAndClaimFreeGifts(State)

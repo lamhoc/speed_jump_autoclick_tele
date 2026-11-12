@@ -317,24 +317,70 @@ local function detectNextTierFromGui(filterKeyword)
 end
 
 local function closeAnyMachinePopup()
+    -- 1. Gọi TabController của game nếu có
+    pcall(function()
+        if G and G.TabController then
+            if type(G.TabController.CloseAll) == "function" then
+                G.TabController.CloseAll()
+            end
+            if type(G.TabController.Close) == "function" then
+                G.TabController.Close("EquipSlotsMachine")
+                G.TabController.Close("EggHatchSlotsMachine")
+                G.TabController.Close("PetEquip")
+                G.TabController.Close("EquipSlots")
+                G.TabController.Close("EggSlots")
+            end
+        end
+    end)
+
+    -- 2. Quét mọi GUI trong PlayerGui để click nút X / Close hoặc ẩn frame máy
     pcall(function()
         local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
         if not pgui then return end
         for _, gui in ipairs(pgui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                local gName = gui.Name:lower()
-                if gName:find("slot") or gName:find("equip") or gName:find("machine") or gName:find("upgrade") or gName:find("pet") or gName:find("egg") then
-                    for _, closeBtn in ipairs(gui:GetDescendants()) do
-                        if (closeBtn:IsA("TextButton") or closeBtn:IsA("ImageButton") or closeBtn:IsA("GuiButton")) and closeBtn.Visible then
-                            local cName = closeBtn.Name:lower()
-                            local cText = (closeBtn:IsA("TextButton") and closeBtn.Text:lower()) or ""
-                            if cName == "close" or cName == "x" or cName:find("exit") or cName:find("cross") or cText == "x" then
-                                triggerGuiClick(closeBtn)
+            if gui:IsA("ScreenGui") and gui.Enabled and not gui.Name:find("KizHub") and not gui.Name:find("Chat") then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if (desc:IsA("TextButton") or desc:IsA("ImageButton") or desc:IsA("GuiButton")) and desc.Visible then
+                        local n = desc.Name:lower()
+                        local t = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                        local isClose = n == "close" or n == "closebutton" or n == "x" or n:find("exit") or n:find("cross") or t == "x"
+                        
+                        -- Nhận diện nút đỏ/hồng ở góc trên (như nút X đóng trong game)
+                        if not isClose and desc.Position.X.Scale > 0.6 and desc.Position.Y.Scale < 0.3 then
+                            local bg = desc.BackgroundColor3
+                            if bg.R > 0.5 and bg.B > 0.2 then
+                                isClose = true
+                            end
+                        end
+
+                        if isClose then
+                            triggerGuiClick(desc)
+                        end
+                    end
+
+                    -- Nếu là Frame chứa popup máy, tự tìm nút close con
+                    if desc:IsA("Frame") and desc.Visible then
+                        local fName = desc.Name:lower()
+                        if fName:find("slot") or fName:find("equip") or fName:find("machine") or fName:find("egg") then
+                            for _, child in ipairs(desc:GetChildren()) do
+                                if (child:IsA("TextButton") or child:IsA("ImageButton") or child:IsA("GuiButton")) and (child.Name:lower():find("close") or child.Name:lower() == "x") then
+                                    triggerGuiClick(child)
+                                end
                             end
                         end
                     end
                 end
             end
+        end
+    end)
+
+    -- 3. Gửi phím Escape giả lập để đóng cửa sổ triệt để
+    pcall(function()
+        local vim = game:GetService("VirtualInputManager")
+        if vim and type(vim.SendKeyEvent) == "function" then
+            vim:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+            task.wait(0.05)
+            vim:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
         end
     end)
 end
@@ -472,15 +518,19 @@ function Progression.performSlotPurchaseTrip(state)
     pcall(function()
         buySlotsAtMachine("EquipSlotsMachine", "equip", "EquipSlotsMachine_RequestPurchase", "PetSlots", state, "CurrentPetSlotTier")
     end)
-    task.wait(0.3)
+    closeAnyMachinePopup()
+    task.wait(0.6)
 
     -- 2. Teleport tới EggHatchSlotsMachine (Slot Trứng) và mua
     pcall(function()
         buySlotsAtMachine("EggHatchSlotsMachine", "egg", "EggHatchSlotsMachine_RequestPurchase", "EggSlots", state, "CurrentEggSlotTier")
     end)
-    task.wait(0.3)
+    closeAnyMachinePopup()
+    task.wait(0.6)
 
-    -- 3. Teleport quay trở lại bãi farm tốt nhất
+    -- 3. Tắt sạch UI máy và teleport quay trở lại bãi farm tốt nhất
+    closeAnyMachinePopup()
+    task.wait(0.2)
     state.SlotBuying = false
     task.wait(0.2)
     pcall(function()
