@@ -51,9 +51,52 @@ function RankController.IsSupported(t)
     return false
 end
 
+local FRIENDLY_NAMES = {
+    [1] = "Phá vật phẩm",
+    [2] = "Mở pet mới",
+    [3] = "Mở trứng (Eggs)",
+    [4] = "Ghép pet Vàng (Gold)",
+    [5] = "Ghép pet Cầu vồng (Rainbow)",
+    [6] = "Mở khu vực mới (Zone)",
+    [7] = "Thu thập xu",
+    [8] = "Phá Mini Chest",
+    [9] = "Phá Diamond Breakable",
+    [12] = "Nâng cấp Potion",
+    [13] = "Nâng cấp Enchant",
+    [14] = "Nhặt Potion",
+    [15] = "Nhặt Enchant",
+    [18] = "Nhận quà Free Gift",
+    [19] = "Dung hợp pet (Fuse)",
+    [20] = "Mở Best Egg",
+    [21] = "Phá vật phẩm bãi hiện tại",
+    [31] = "Dùng Coin Jar",
+    [32] = "Triệu hồi Sao băng (Comet)",
+    [33] = "Cắm cờ (Flag)",
+    [34] = "Uống Potion",
+    [35] = "Ăn trái cây (Fruit)",
+    [37] = "Dùng Coin Jar bãi tốt nhất",
+    [38] = "Triệu hồi Comet bãi tốt nhất",
+    [39] = "Phá Mini Chest bãi tốt nhất",
+    [40] = "Ghép pet Vàng Best Egg",
+    [41] = "Ghép pet Cầu vồng Best Egg",
+    [42] = "Mở pet hiếm (Rare Pet)",
+    [43] = "Đập Piñata bãi tốt nhất",
+    [44] = "Đập Lucky Block bãi tốt nhất",
+    [66] = "Đập Piñata",
+    [67] = "Đập Lucky Block",
+    [75] = "Phá Superior Mini Chest",
+    [76] = "Phá Superior Mini Chest bãi tốt nhất",
+}
+
 function RankController.GoalTitle(raw, parsed)
     if type(raw) == "table" and type(raw.Title) == "string" and raw.Title ~= "" then
         return raw.Title
+    end
+    if Net.isfn(G.GoalCmds, "MakeTitle") then
+        local ok, t = Net.gcall(G.GoalCmds.MakeTitle, raw)
+        if ok and type(t) == "string" and #t > 0 then
+            return t
+        end
     end
     if Net.isfn(G.QuestCmds, "MakeTitle") then
         local ok, t = Net.gcall(G.QuestCmds.MakeTitle, raw)
@@ -61,8 +104,8 @@ function RankController.GoalTitle(raw, parsed)
             return t
         end
     end
-    local name = RankData.GOAL_TYPE_NAMES[parsed.Type] or ("Type " .. tostring(parsed.Type))
-    return string.format("%s (%s/%s)", name, Net.int(parsed.Progress or 0), Net.int(parsed.Amount or 0))
+    local friendly = FRIENDLY_NAMES[parsed.Type] or RankData.GOAL_TYPE_NAMES[parsed.Type] or ("Type " .. tostring(parsed.Type))
+    return string.format("%s (%s/%s)", friendly, Net.int(parsed.Progress or 0), Net.int(parsed.Amount or 0))
 end
 
 function RankController.RankInfo()
@@ -130,36 +173,82 @@ end
 
 function RankController.ActiveGoals()
     local save = Net.getSave()
-    local raw = save and type(save.Goals) == "table" and save.Goals or nil
-    if not raw and Net.isfn(G.QuestCmds, "GetActive") then
-        raw = Net.gval(G.QuestCmds.GetActive)
+    local raw = nil
+    if save and type(save) == "table" then
+        if type(save.Goals) == "table" and next(save.Goals) ~= nil then
+            raw = save.Goals
+        elseif type(save.Quests) == "table" and next(save.Quests) ~= nil then
+            raw = save.Quests
+        elseif type(save.RankGoals) == "table" and next(save.RankGoals) ~= nil then
+            raw = save.RankGoals
+        end
     end
+
+    if not raw and Net.isfn(G.GoalCmds, "GetActive") then
+        local ok, res = Net.gcall(G.GoalCmds.GetActive)
+        if ok and type(res) == "table" and next(res) ~= nil then
+            raw = res
+        end
+    end
+
+    if not raw and Net.isfn(G.QuestCmds, "GetActive") then
+        local ok, res = Net.gcall(G.QuestCmds.GetActive)
+        if ok and type(res) == "table" and next(res) ~= nil then
+            raw = res
+        end
+    end
+
+    if not raw and Net.isfn(G.RankCmds, "GetGoals") then
+        local ok, res = Net.gcall(G.RankCmds.GetGoals)
+        if ok and type(res) == "table" and next(res) ~= nil then
+            raw = res
+        end
+    end
+
     if type(raw) ~= "table" then return {}, {} end
 
     local list, byType = {}, {}
     for tier, g in pairs(raw) do
-        if type(g) == "table" and g.Type ~= nil then
-            local amount = tonumber(g.Amount) or 0
-            local progress = tonumber(g.Progress) or 0
-            local copy = {
-                tier = tier,
-                Stars = tonumber(g.Stars) or 0,
-                Type = g.Type,
-                Amount = amount,
-                Progress = progress,
-                UID = g.UID,
-                remaining = math.max(0, amount - progress),
-                PotionTier = g.PotionTier,
-                EnchantTier = g.EnchantTier,
-                BreakableType = g.BreakableType,
-                CurrencyID = g.CurrencyID,
-                raw = g,
-            }
-            copy.title = RankController.GoalTitle(g, copy)
-            copy.supported = RankController.IsSupported(copy.Type)
-            list[#list + 1] = copy
-            byType[copy.Type] = byType[copy.Type] or {}
-            table.insert(byType[copy.Type], copy)
+        if type(g) == "table" then
+            local data = (type(g.Data) == "table" and g.Data) or (type(g.Goal) == "table" and g.Goal) or g
+            local gType = data.Type or data.GoalType or data.type or data.ID or data._id
+
+            if type(gType) == "string" then
+                local numType = tonumber(gType)
+                if not numType then
+                    for id, name in pairs(RankData.GOAL_TYPE_NAMES) do
+                        if name == gType or name:lower() == gType:lower() then
+                            numType = id
+                            break
+                        end
+                    end
+                end
+                gType = numType or gType
+            end
+
+            if gType ~= nil then
+                local amount = tonumber(data.Amount or data.Target or data.GoalAmount or data.Total or data.Max) or 0
+                local progress = tonumber(data.Progress or data.Current or data.Count or data.Prog) or 0
+                local copy = {
+                    tier = tier,
+                    Stars = tonumber(data.Stars or data.Star or data.RewardStars) or 0,
+                    Type = gType,
+                    Amount = amount,
+                    Progress = progress,
+                    UID = data.UID or tostring(tier),
+                    remaining = math.max(0, amount - progress),
+                    PotionTier = data.PotionTier,
+                    EnchantTier = data.EnchantTier,
+                    BreakableType = data.BreakableType,
+                    CurrencyID = data.CurrencyID,
+                    raw = data,
+                }
+                copy.title = RankController.GoalTitle(data, copy)
+                copy.supported = RankController.IsSupported(copy.Type)
+                list[#list + 1] = copy
+                byType[copy.Type] = byType[copy.Type] or {}
+                table.insert(byType[copy.Type], copy)
+            end
         end
     end
 
@@ -346,31 +435,50 @@ function RankController.BuildPlan(state)
         end
     end
 
-    -- Logic NewZoneHatch: Khi đi đến map mới, tự động mở egg tại map đó 3 phút, sau đó tích coin đợi mở map tiếp theo
+    -- Logic NewZoneHatch: Khi đi đến map mới, chỉ mở egg nếu người chơi CÓ ĐỦ COINS mua ít nhất 1 quả trứng
     local currentZoneId = BestZoneIdFn and BestZoneIdFn() or nil
     local nzCfg = Config.NewZoneHatch
     if nzCfg and nzCfg.Enabled ~= false and currentZoneId and type(currentZoneId) == "string" then
         state.ZoneHatchDone = state.ZoneHatchDone or {}
         if not state.ZoneHatchDone[currentZoneId] then
-            if not state.NewZoneHatchSession or state.NewZoneHatchSession.ZoneId ~= currentZoneId then
-                state.NewZoneHatchSession = {
-                    ZoneId = currentZoneId,
-                    StartedAt = os.clock(),
-                    Duration = tonumber(nzCfg.Duration) or 180,
-                }
+            local egg = BestEggFn and BestEggFn()
+            local canAffordEgg = false
+            if egg and egg.id then
+                local unitPrice = Net.gval(G.CalcEggPricePlayer, egg.dir)
+                local cur = (egg.dir and egg.dir.currency) or "Coins"
+                local bal = Net.currency(cur)
+                if type(unitPrice) == "number" and unitPrice > 0 and bal >= unitPrice then
+                    canAffordEgg = true
+                end
             end
 
-            local elapsed = os.clock() - state.NewZoneHatchSession.StartedAt
-            local remainingSec = math.max(0, math.ceil(state.NewZoneHatchSession.Duration - elapsed))
-            if remainingSec > 0 then
-                Plan.Hatch = true
-                Plan.HatchEggOnly = true
-                Plan.NewZoneSession = true
-                table.insert(Plan.HatchReasons, string.format("New Zone Egg (%ds left)", remainingSec))
-                parts[#parts + 1] = string.format("Hatching New Zone %s (%ds)", currentZoneId, remainingSec)
+            if canAffordEgg then
+                if not state.NewZoneHatchSession or state.NewZoneHatchSession.ZoneId ~= currentZoneId then
+                    state.NewZoneHatchSession = {
+                        ZoneId = currentZoneId,
+                        StartedAt = os.clock(),
+                        Duration = tonumber(nzCfg.Duration) or 180,
+                    }
+                end
+
+                local elapsed = os.clock() - state.NewZoneHatchSession.StartedAt
+                local remainingSec = math.max(0, math.ceil(state.NewZoneHatchSession.Duration - elapsed))
+                if remainingSec > 0 then
+                    Plan.Hatch = true
+                    Plan.HatchEggOnly = true
+                    Plan.NewZoneSession = true
+                    table.insert(Plan.HatchReasons, string.format("New Zone Egg (%ds left)", remainingSec))
+                    parts[#parts + 1] = string.format("Hatching New Zone %s (%ds)", currentZoneId, remainingSec)
+                else
+                    state.ZoneHatchDone[currentZoneId] = true
+                    state.NewZoneHatchSession = nil
+                end
             else
-                state.ZoneHatchDone[currentZoneId] = true
-                state.NewZoneHatchSession = nil
+                -- Không đủ tiền mở egg: KHÔNG ép Hatch, kết thúc session để bot chuyên tâm cày coin ở bãi
+                if state.NewZoneHatchSession and state.NewZoneHatchSession.ZoneId == currentZoneId then
+                    state.ZoneHatchDone[currentZoneId] = true
+                    state.NewZoneHatchSession = nil
+                end
             end
         end
     end

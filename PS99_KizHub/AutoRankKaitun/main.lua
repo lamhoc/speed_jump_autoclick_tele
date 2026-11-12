@@ -198,14 +198,16 @@ if Config.Disable3DRendering == false then
 else
     EngineOptim.applyAll(Config.TargetFPS or 5, true)
 end
+EngineOptim.hideOtherPlayers()
 AntiAFK.installGodModeAntiAfk(Network.netFire, 35)
 
 local ui = nil
 if Config.ShowGui ~= false then
     ui = DashboardGui.create({
-        Title = "PS99 AUTORANK WORLD 1 (1 -> 11)",
-        Subtitle = "Auto Quest Farm • Auto Hatch • Auto Craft • Auto Slots",
-        LogoAssetId = "rbxassetid://10709791437",
+        Title = "Frost Hub",
+        BadgeTitle = "❄ Frost Hub | Auto Rank World 1",
+        Subtitle = "Black Screen: the 3D world is not drawn, the script keeps playing",
+        Discord = "discord.gg/frostps99",
         ToggleKey = Config.GuiToggleKey,
         Blackout = Config.BlackoutGui ~= false,
     })
@@ -241,7 +243,7 @@ local function SpawnLoop(name, tickFn, intervalFn)
     end)
 end
 
--- Cập nhật GUI Dashboard
+-- Cập nhật GUI Dashboard (Chuẩn 100% phong cách Frost Hub)
 local function updateRankGui()
     if not ui then return end
     pcall(function()
@@ -251,45 +253,47 @@ local function updateRankGui()
         end
 
         local info = State.Rank
+        local rNum = info and info.rankNumber or 1
+        local stars = info and info.stars or 0
+        local totalStars = info and math.max(1, info.totalStars) or 1
+        local pct = (stars / totalStars) * 100
+
+        -- Dòng nổi bật: Rank 5 • 150/400 Stars (37.5%) • Zone (Tiki)
         if ui.ZoneLabel then
-            ui.ZoneLabel.Text = QuestFarm.BestZoneName()
+            ui.ZoneLabel.Text = string.format("Rank %d • %d/%d Stars (%.1f%%) • %s", rNum, stars, totalStars, pct, QuestFarm.BestZoneName())
         end
-        if ui.CombineLabel then
-            local rNum = info and info.rankNumber or 1
-            local rTitle = info and tostring(info.title or "") or "Rank " .. rNum
-            ui.CombineLabel.Text = string.format("Rank %d - %s", rNum, rTitle)
+
+        -- Dòng 1: Treats / Stats (Hatched, Gifts, Crafted)
+        if ui.TreatsLabel then
+            ui.TreatsLabel.Text = string.format("Hatched: %s | Gifts: %s | Crafted: %s", Net.shorten(State.Counters.Hatched or 0), Net.shorten(State.Counters.Claimed or 0), Net.shorten(State.Counters.Crafted or 0))
         end
-        if ui.MailLabel then
-            local stars = info and info.stars or 0
-            local totalStars = info and math.max(1, info.totalStars) or 1
-            ui.MailLabel.Text = string.format("%s / %s Sao (%.1f%%)", Net.int(stars), Net.int(totalStars), (stars / totalStars) * 100)
-        end
-        if ui.DaycareLabel then
-            local targetRank = Config.TargetRank or 11
-            local rNum = info and info.rankNumber or 1
-            ui.DaycareLabel.Text = (rNum >= targetRank) and "👑 ĐẠT RANK 11!" or string.format("Mục tiêu: Rank %d (Còn %d)", targetRank, math.max(0, targetRank - rNum))
-        end
+
+        -- Dòng 2: Candy Coins / Gems
         if ui.CoinsLabel then
             local coins = Net.currency("Coins")
             local diamonds = Net.currency("Diamonds")
-            ui.CoinsLabel.Text = string.format("%s Coins | %s Gems", Net.shorten(coins), Net.shorten(diamonds))
+            ui.CoinsLabel.Text = string.format("Coins: %s | Gems: %s", Net.shorten(coins), Net.shorten(diamonds))
         end
-        if ui.TreatsLabel then
-            ui.TreatsLabel.Text = string.format("Trứng: %s | Quà: %s | Craft: %s", Net.shorten(State.Counters.Hatched or 0), Net.shorten(State.Counters.Claimed or 0), Net.shorten(State.Counters.Crafted or 0))
+
+        -- Dòng 3: Target Rank Status
+        if ui.CombineLabel then
+            local targetRank = Config.TargetRank or 11
+            local rankStatus = (rNum >= targetRank) and "👑 ĐÃ ĐẠT RANK 11!" or string.format("Mục tiêu: Rank %d (Còn %d rank)", targetRank, math.max(0, targetRank - rNum))
+            ui.CombineLabel.Text = rankStatus
         end
+
+        -- Dòng 4: Doing Action & Danh sách Quests đang làm
         if ui.DetailBox then
             local lines = {}
-            lines[#lines + 1] = "HÀNH ĐỘNG: " .. tostring(State.Action or "Đang farm...")
-            lines[#lines + 1] = "----------------------------------------"
+            lines[#lines + 1] = "Doing: " .. tostring(State.Action or "Đang farm...")
             local goals = State.Goals or {}
             if #goals == 0 then
-                lines[#lines + 1] = "• Đang quét dữ liệu nhiệm vụ Rank..."
+                lines[#lines + 1] = "Quests: Đang đồng bộ nhiệm vụ..."
             else
                 for i, goal in ipairs(goals) do
-                    if i <= 5 then
-                        local prog = Net.int(goal.Progress or 0)
-                        local target = Net.int(goal.Amount or 0)
-                        lines[#lines + 1] = string.format("• [%d★] %s (%s/%s)", goal.Stars or 0, tostring(goal.title or ("Goal " .. tostring(goal.Type))), prog, target)
+                    if i <= 3 then
+                        local title = tostring(goal.title or ("Quest " .. tostring(goal.Type)))
+                        lines[#lines + 1] = string.format("• [%d★] %s", goal.Stars or 0, title)
                     end
                 end
             end
@@ -326,6 +330,11 @@ local function StartThreads()
         QuestCraft.CraftTick(State)
     end, function() return Config.CraftTick or 4.0 end)
 
+    -- Thực thi Quests Potion, Enchant, Fruit, Flag (3.5s)
+    SpawnLoop("quest items", function()
+        QuestItems.ItemTick(State)
+    end, 3.5)
+
     -- Sử dụng Items sự kiện (3.0s)
     SpawnLoop("events", function()
         QuestItems.EventTick(State)
@@ -348,10 +357,12 @@ local function StartThreads()
         State.StarterPetsPicked = true
     end)
 
-    -- Tự mở Slot Pet và Slot Trứng bằng Diamonds (15.0s)
-    SpawnLoop("open slots", function()
-        Progression.autoOpenSlots(State)
-    end, 15)
+    -- [TẮT THEO YÊU CẦU]: Không mua slot pet hay egg
+    if Config.AutoOpenSlots == true then
+        SpawnLoop("open slots", function()
+            Progression.autoOpenSlots(State)
+        end, 15)
+    end
 
     -- Tự nhận Free Gifts 12 mốc (60.0s)
     SpawnLoop("free gifts", function()

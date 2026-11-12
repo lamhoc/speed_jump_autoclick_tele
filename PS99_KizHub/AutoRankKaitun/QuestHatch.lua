@@ -264,9 +264,23 @@ function QuestHatch.HatchTick(state)
     end
 
     local Unlocked = QuestHatch.CanHatchEgg(egg)
+    local canAffordAtLeastOne = (QuestHatch.AffordableHatchAmount(egg, 1) >= 1)
+
+    -- Kiểm tra nghiêm ngặt khả năng chi trả trước khi dịch chuyển: Nếu không đủ tiền mở ít nhất 1 quả thì tuyệt đối KHÔNG teleport
+    if not canAffordAtLeastOne then
+        state.HatchSession = false
+        state.Hopping = false
+        HatchBackoffUntil = os.clock() + 3
+        if state.NewZoneHatchSession then
+            state.NewZoneHatchSession = nil
+        end
+        return
+    end
+
     local Amount = Unlocked and QuestHatch.AffordableHatchAmount(egg, QuestHatch.HatchAmount(state)) or 0
     if Unlocked and Amount < 1 then
         state.HatchSession = false
+        state.Hopping = false
         HatchBackoffUntil = os.clock() + 2
         return
     end

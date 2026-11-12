@@ -491,27 +491,50 @@ end
 local orbMapCache = nil
 function QuestFarm.findOrbMap()
     if type(orbMapCache) == "table" then return orbMapCache end
-    pcall(function()
-        if type(getgc) == "function" then
+    local ok, map = Net.gcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local mod = RS:FindFirstChild("Library") and RS.Library:FindFirstChild("Client") and RS.Library.Client:FindFirstChild("OrbCmds")
+        if not mod then return nil end
+
+        local fn = nil
+        if type(getsenv) == "function" then
+            local env = getsenv(mod)
+            if type(env) == "table" and type(env.ProcessCreate) == "function" then
+                fn = env.ProcessCreate
+            end
+        end
+
+        if type(fn) ~= "function" and type(getgc) == "function" then
             for _, f in ipairs(getgc(false)) do
-                if type(f) == "function" then
-                    local src = debug.info(f, "s") or ""
-                    if src:find("OrbCmds", 1, true) and type(debug.getupvalues) == "function" then
-                        for _, up in pairs(debug.getupvalues(f)) do
-                            if type(up) == "table" then
-                                for _, v in pairs(up) do
-                                    if type(v) == "table" and type(v.Collect) == "function" then
-                                        orbMapCache = up
-                                        return
-                                    end
-                                end
-                            end
-                        end
-                    end
+                if type(f) == "function" and debug.info(f, "n") == "ProcessCreate" then
+                    fn = f
+                    break
                 end
             end
         end
+
+        if type(fn) ~= "function" then return nil end
+        if type(debug.getupvalues) ~= "function" then return nil end
+
+        for _, up in pairs(debug.getupvalues(fn)) do
+            if type(up) == "table" then
+                local strKeys = false
+                for k in pairs(up) do
+                    if type(k) == "string" then
+                        strKeys = true
+                        break
+                    end
+                end
+                if not strKeys then
+                    return up
+                end
+            end
+        end
+        return nil
     end)
+    if ok and type(map) == "table" then
+        orbMapCache = map
+    end
     return orbMapCache
 end
 

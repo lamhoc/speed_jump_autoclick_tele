@@ -101,6 +101,7 @@ local G = {
     RankCmds                    = req("Library.Client.RankCmds"),
     RanksUtil                   = req("Library.Util.RanksUtil", true),
     QuestCmds                   = req("Library.Client.QuestCmds", true),
+    GoalCmds                    = req("Library.Client.GoalCmds", true),
 
     -- Machines, Upgrades & Daycare
     MachineCmds                 = req("Library.Client.MachineCmds", true),

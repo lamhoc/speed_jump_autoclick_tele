@@ -293,15 +293,18 @@ BuffsAndGifts.init(sharedDeps)
 
 -- 4. Kích hoạt tối ưu đồ họa, Anti-AFK & Bỏ animation nở trứng
 EngineOptim.applyAll(Config.TargetFPS or 5, true)
+EngineOptim.hideOtherPlayers()
 AntiAFK.installGodModeAntiAfk(Network.netFire, Config.AfkPulseInterval or 35)
 EggHatch.installNoHatchAnimation()
 AutoMail.startMailLoop(state)
 
--- 5. Khởi tạo Giao diện AMOLED KizCard
+-- 5. Khởi tạo Giao diện AMOLED Frost Hub Card (Zero Gaps, Màn Đen Toàn Diện)
 local ui = DashboardGui.create({
-    Title = "PS99 HALLOWEEN KAITUN",
-    Subtitle = "Auto Farm • Auto Combine Huge • Daycare • Upgrades",
-    LogoAssetId = Config.LogoAssetId,
+    Title = "Kiz Hub",
+    BadgeTitle = "👑 Kiz Hub | Halloween Games",
+    Subtitle = "Black Screen: the 3D world is not drawn, the script keeps playing",
+    Discord = "discord.gg/pornhub",
+    Blackout = true,
 })
 
 local function updateKizhubGui()
@@ -310,10 +313,24 @@ local function updateKizhubGui()
         if ui.UptimeLabel then
             ui.UptimeLabel.Text = formatUptime()
         end
+
+        local c = Network.currency(K.CURRENCY) or 0
+        local t = Network.currency(K.TREATS) or 0
+        if not state.sessionStartCoins then state.sessionStartCoins = c end
+        if not state.sessionStartTreats then state.sessionStartTreats = t end
+
         if ui.ZoneLabel then
             local z = state.currentZoneNumber or 1
             local zInfo = K.ZONES[z]
-            ui.ZoneLabel.Text = string.format("Zone %d/8 (%s)", z, zInfo and zInfo.Name or "...")
+            ui.ZoneLabel.Text = string.format("Zone %d of 8 • %s • %d hatched", z, zInfo and zInfo.Name or "...", state.totalEggsHatched or 0)
+        end
+        if ui.TreatsLabel then
+            local deltaT = math.max(0, t - (state.sessionStartTreats or t))
+            ui.TreatsLabel.Text = string.format("Treats: %s (+%s this session)", Network.shorten(t), Network.shorten(deltaT))
+        end
+        if ui.CoinsLabel then
+            local deltaC = math.max(0, c - (state.sessionStartCoins or c))
+            ui.CoinsLabel.Text = string.format("Candy Coins: %s (+%s this session)", Network.shorten(c), Network.shorten(deltaC))
         end
         if ui.CombineLabel then
             local now = os.clock()
@@ -326,32 +343,14 @@ local function updateKizhubGui()
                     end
                 end
             end
-            ui.CombineLabel.Text = state.combineStatus or "Rảnh"
+            ui.CombineLabel.Text = "Combine Egg: " .. (state.combineStatus or "Rảnh")
         end
         if ui.MailLabel then
-            ui.MailLabel.Text = state.mailStatus or "Rảnh"
-        end
-        if ui.DaycareLabel then
-            ui.DaycareLabel.Text = state.daycareStatus or "Rảnh"
-        end
-        if ui.CoinsLabel then
-            local c = Network.currency(K.CURRENCY) or 0
-            ui.CoinsLabel.Text = Network.shorten(c)
-        end
-        if ui.TreatsLabel then
-            local t = Network.currency(K.TREATS) or 0
-            ui.TreatsLabel.Text = string.format("%s treats | %d trứng", Network.shorten(t), state.totalEggsHatched or 0)
+            ui.MailLabel.Text = string.format("Hatched: %d   Mail: %s   Daycare: %s", state.totalEggsHatched or 0, tostring(state.mailStatus or "Rảnh"), tostring(state.daycareStatus or "Rảnh"))
         end
         if ui.DetailBox then
-            local lines = {}
-            for _, u in ipairs(K.UPGRADES) do
-                local info = TreatUpgrades.upgradeInfo(u)
-                local t = info.tier or 0
-                local m = info.max or 5
-                local status = (t >= m) and "MAX" or (info.cost and (Network.shorten(info.cost) .. " treats") or "...")
-                table.insert(lines, string.format("[%s: Lv%d/%d - %s]", u.Name, t, m, status))
-            end
-            ui.DetailBox.Text = table.concat(lines, "\n")
+            local act = state.excursion or (state.currentZoneNumber == 8 and "Mở trứng liên tục Zone 8..." or string.format("Farm bãi & mở trứng Zone %d...", state.currentZoneNumber or 1))
+            ui.DetailBox.Text = "Doing: " .. tostring(act)
         end
     end)
 end

@@ -210,6 +210,31 @@ function QuestItems.HandleUseFlags(goal, state)
     end
 end
 
+-- Thực thi toàn bộ nhiệm vụ liên quan đến Items (Uống Potion, Nâng cấp Potion/Enchant, Ăn Fruit, Cắm Flag)
+function QuestItems.ItemTick(state)
+    if not state.Enabled then return end
+    if state.WorldSwitching or state.WorldMismatch or state.Hopping then return end
+
+    local goals = state.Goals or {}
+    for _, goal in ipairs(goals) do
+        if not state.Alive or not state.Enabled then return end
+        if (goal.remaining or 0) > 0 then
+            local t = goal.Type
+            if t == RankData.T_USE_POTION and Config.AutoUsePotions then
+                pcall(QuestItems.HandleUsePotions, goal, state)
+            elseif t == RankData.T_UPGRADE_POTION and Config.AutoUpgradePotions then
+                pcall(QuestItems.HandleUpgrade, goal, "potion", state)
+            elseif t == RankData.T_UPGRADE_ENCHANT and Config.AutoUpgradeEnchants then
+                pcall(QuestItems.HandleUpgrade, goal, "enchant", state)
+            elseif t == RankData.T_USE_FRUIT and Config.AutoUseFruits then
+                pcall(QuestItems.HandleUseFruits, goal, state)
+            elseif t == RankData.T_USE_FLAG and Config.AutoUseFlags then
+                pcall(QuestItems.HandleUseFlags, goal, state)
+            end
+        end
+    end
+end
+
 function QuestItems.EventTick(state)
     if not state.Enabled or not Config.AutoSpawnEvents then return end
     if state.WorldSwitching or state.WorldMismatch or state.Hopping or state.HatchSession then return end

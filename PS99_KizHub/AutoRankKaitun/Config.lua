@@ -49,7 +49,7 @@ local Config = {
 
     -- Tự động hóa tài khoản mới & Nâng cấp
     AutoPickStarterPets = true,   -- Tự chọn 2 pet starter cho acc mới
-    AutoOpenSlots = true,         -- Tự mở slot pet & slot hatch trứng bằng Gems
+    AutoOpenSlots = false,        -- [TẮT]: Không mua slot pet hay slot hatch trứng bằng Gems
     AutoClaimFreeGifts = true,    -- Tự nhận 12 mốc quà Free Gifts định kỳ
 
     -- Discord Webhook Notifications
@@ -60,10 +60,10 @@ local Config = {
         TargetRank = 11,
     },
 
-    -- KizHub Blackout GUI & Performance (Bật GUI để thao tác nút cam tròn Header)
-    ShowGui = true,             -- [BẬT GUI KIZCARD]: true = Hiển thị thẻ thông số và nút cam tròn Header
-    BlackoutGui = false,        -- [MẶC ĐỊNH KHÔNG ĐEN]: false = Mở màn hình 3D nhìn thấy game ngay
-    Disable3DRendering = false, -- [BẬT KẾT XUẤT 3D]: false = Bật hiển thị 3D nhân vật, map, pet
+    -- Frost Hub Blackout GUI & Performance (Đen toàn màn hình 100% không chừa khoảng trống)
+    ShowGui = true,             -- [BẬT GUI FROST CARD]: Hiển thị thẻ thông số và badge đỉnh
+    BlackoutGui = true,         -- [ĐEN TOÀN MÀN HÌNH]: Màn hình đen tuyền AMOLED 100%
+    Disable3DRendering = true,  -- [TẮT 3D RENDERING]: Tiết kiệm CPU / GPU tối đa cho máy farm nhiều acc
     TargetFPS = 60,             -- FPS mượt để dễ quan sát
     GuiToggleKey = Enum.KeyCode.RightControl,
 

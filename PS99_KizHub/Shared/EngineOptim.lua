@@ -84,12 +84,7 @@ function EngineOptim.purgeHeavyVisuals()
                     pcall(function() d:Destroy() end)
                 end
             end
-            local orbs = things:FindFirstChild("Orbs")
-            if orbs then
-                for _, o in ipairs(orbs:GetChildren()) do
-                    pcall(function() o:Destroy() end)
-                end
-            end
+            -- Lưu ý: KHÔNG destroy folder Orbs ở đây để tránh triệt tiêu ngọc trước khi bot hút kịp
         end
 
         local debris = workspace:FindFirstChild("__DEBRIS")
@@ -111,6 +106,63 @@ function EngineOptim.stopAnimations()
             for _, t in ipairs(anim:GetPlayingAnimationTracks()) do
                 t:Stop(0)
             end
+        end
+    end)
+end
+
+-- Ẩn toàn bộ người chơi khác để tối ưu CPU / FPS cực đại (Hide Other Players)
+local isHidePlayersInstalled = false
+function EngineOptim.hideOtherPlayers()
+    if isHidePlayersInstalled then return end
+    isHidePlayersInstalled = true
+
+    local function hideModel(model)
+        if not model or (LocalPlayer and model == LocalPlayer.Character) then return end
+        for _, part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.LocalTransparencyModifier = 1
+                part.Transparency = 1
+                part.CanCollide = false
+                part.CastShadow = false
+            elseif part:IsA("Decal") then
+                part.Transparency = 1
+            elseif part:IsA("BillboardGui") or part:IsA("SurfaceGui") then
+                part.Enabled = false
+            end
+        end
+    end
+
+    local function onPlayerAdded(p)
+        if p == LocalPlayer then return end
+        if p.Character then
+            hideModel(p.Character)
+        end
+        p.CharacterAdded:Connect(function(char)
+            task.wait(0.2)
+            hideModel(char)
+            char.DescendantAdded:Connect(function(desc)
+                if desc:IsA("BasePart") or desc:IsA("Decal") then
+                    pcall(function() desc.Transparency = 1 end)
+                elseif desc:IsA("BillboardGui") or desc:IsA("SurfaceGui") then
+                    pcall(function() desc.Enabled = false end)
+                end
+            end)
+        end)
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        onPlayerAdded(p)
+    end
+    Players.PlayerAdded:Connect(onPlayerAdded)
+
+    task.spawn(function()
+        while isHidePlayersInstalled do
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    hideModel(p.Character)
+                end
+            end
+            task.wait(5)
         end
     end)
 end
@@ -167,6 +219,7 @@ function EngineOptim.applyAll(targetFps, disable3d)
     EngineOptim.disableHeavyLighting()
     EngineOptim.purgeHeavyVisuals()
     EngineOptim.stopAnimations()
+    EngineOptim.hideOtherPlayers()
     EngineOptim.set3dRendering(false)
     EngineOptim.startMemoryCleanupLoop()
 end
