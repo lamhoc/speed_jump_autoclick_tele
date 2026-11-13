@@ -1,12 +1,13 @@
 -- =========================================================================
 -- PS99_KizHub/HalloweenKaitun/CombineHuge.lua
 -- Module tự động mở Combine Egg (Recipe Index 6) sự kiện Halloween PS99
--- Tối ưu hóa:
+-- Tối ưu hóa & Khóa cứng Index 6:
 --   - 100% Network Remote thuần túy, loại bỏ hoàn toàn mã click giả lập
---   - Nhắm thẳng mục tiêu Recipe Index 6 (Combine Egg) được xác thực qua Instancing Spy
---   - Đếm nguyên liệu chuẩn xác (Agony & Shard), trừ pet đang Equipped/Locked
+--   - Đọc trực tiếp dir.Recipes[6] (bỏ qua cờ Hidden/FFlag), tuyệt đối không fallback về Index 5
+--   - Đếm nguyên liệu chuẩn xác (Agony & Shard), trừ toàn bộ pet đang Equipped/Locked
+--   - In log chi tiết: "[KizHub Combine] Recipe 6 Check -> có X / cần Y"
 --   - Tự động tắt/bật cutscene mở trứng (Egg Animation) chống lag/treo client
---   - Snapshot Inventory bắt Pet mới nở và gửi Discord Webhook khi trúng Huge/Titanic
+--   - Snapshot Inventory bắt Pet mới nở và gửi Discord Webhook khi trúng Huge/Titanic/Gargantuan
 -- =========================================================================
 
 local Players = game:GetService("Players")
@@ -16,7 +17,7 @@ local CombineHuge = {}
 
 local COMBINE_MACHINE_NAME = "HalloweenPetCraftingMachine"
 local COMBINE_MACHINE_ID   = "HalloweenGamesCombine"
-local COMBINE_EGG_INDEX    = 6 -- Recipe Index 6 cho Combine Egg (xác nhận từ Instancing Spy)
+local COMBINE_EGG_INDEX    = 6 -- KHÓA CỨNG RECIPE INDEX 6 CHO COMBINE EGG (Xác nhận từ Instancing Spy)
 
 -- Dependencies truyền từ main.lua qua CombineHuge.init(deps)
 local G = nil
@@ -76,6 +77,18 @@ function CombineHuge.combineDir()
     return nil
 end
 
+-- Đọc trực tiếp Recipe Index 6 (Combine Egg), bỏ qua kiểm tra Hidden và EnabledFFlag
+function CombineHuge.getRecipe6()
+    local dir = CombineHuge.combineDir()
+    if dir and type(dir.Recipes) == "table" then
+        local r6 = dir.Recipes[COMBINE_EGG_INDEX]
+        if type(r6) == "table" then
+            return r6, dir
+        end
+    end
+    return nil, dir
+end
+
 function CombineHuge.ingredientNeed(dir, ing)
     if not (ing and type(ing) == "table") then return 1 end
     local amount = tonumber(CombineHuge.flagValue(ing.AmountFFlag)) or tonumber(ing.Amount) or 1
@@ -89,7 +102,7 @@ function CombineHuge.ingredientNeed(dir, ing)
     return need
 end
 
--- Lấy danh sách UID pet đang trang bị để loại trừ không đem craft
+-- Lấy danh sách UID pet đang trang bị để loại trừ hoàn toàn không đem craft
 local function getEquippedPetUids()
     local equipped = {}
     pcall(function()
@@ -102,6 +115,10 @@ local function getEquippedPetUids()
                     elseif type(it) == "table" and type(it.GetUID) == "function" then
                         local okU, uid = pcall(it.GetUID, it)
                         if okU and uid then equipped[uid] = true end
+                    elseif type(it) == "table" and it._uid then
+                        equipped[it._uid] = true
+                    elseif type(it) == "table" and it.uid then
+                        equipped[it.uid] = true
                     end
                 end
             end
@@ -112,11 +129,16 @@ local function getEquippedPetUids()
                 equipped[uid] = true
             end
         end
+        if s and type(s.Equipped) == "table" then
+            for uid, _ in pairs(s.Equipped) do
+                equipped[uid] = true
+            end
+        end
     end)
     return equipped
 end
 
--- Đếm số lượng item từ Save.Inventory theo từ khóa tên
+-- Đếm số lượng item từ Save.Inventory theo từ khóa tên, loại trừ pet đang trang bị và pet bị khóa
 local function countItemFromSave(itemNameKeyword)
     local kw = string.lower(tostring(itemNameKeyword or ""))
     local total = 0
@@ -128,8 +150,10 @@ local function countItemFromSave(itemNameKeyword)
             if type(s.Inventory[cat]) == "table" then
                 for uid, itemData in pairs(s.Inventory[cat]) do
                     if type(itemData) == "table" and type(itemData.id) == "string" then
-                        -- Bỏ qua pet đang trang bị hoặc bị khóa
-                        local skip = (cat == "Pet" and (equipped[uid] == true or itemData._lk == true))
+                        -- Kiểm tra toàn diện cờ khóa pet: _lk, l, locked
+                        local isLocked = (itemData._lk == true or itemData.l == true or itemData.locked == true)
+                        -- Tuyệt đối loại trừ pet đang trang bị hoặc bị khóa
+                        local skip = (cat == "Pet" and (equipped[uid] == true or isLocked))
                         if not skip then
                             local idLower = itemData.id:lower()
                             if idLower == kw or (kw ~= "" and (idLower:find(kw, 1, true) or kw:find(idLower, 1, true))) then
@@ -146,45 +170,48 @@ end
 CombineHuge.countItemFromSave = countItemFromSave
 
 -- =========================================================================
--- 2. TIẾN ĐỘ & TRẠNG THÁI HIỂN THỊ (KIZCARD)
+-- 2. TIẾN ĐỘ & TRẠNG THÁI HIỂN THỊ (KIZCARD) - KHÓA CHẶT RECIPE 6
 -- =========================================================================
 
 function CombineHuge.getCombineProgress()
     local cfg = getConfig()
-    local dir = CombineHuge.combineDir()
+    local r6, dir = CombineHuge.getRecipe6()
 
     local needAgony = (cfg.CombineIngredients and cfg.CombineIngredients.Agony) or 10
     local needShard = (cfg.CombineIngredients and cfg.CombineIngredients.Shard) or 300
 
-    -- Tính chiết khấu thời gian thực nếu Recipe Index 6 có cấu hình trong Directory
-    if dir and type(dir.Recipes) == "table" and type(dir.Recipes[COMBINE_EGG_INDEX]) == "table" then
-        local r = dir.Recipes[COMBINE_EGG_INDEX]
-        if type(r.Ingredients) == "table" then
-            for _, ing in ipairs(r.Ingredients) do
-                local rawName = ""
-                pcall(function()
-                    if ing.Item and type(ing.Item.GetId) == "function" then
-                        rawName = tostring(ing.Item:GetId() or "")
-                    elseif ing.Item and ing.Item.Id then
-                        rawName = tostring(ing.Item.Id)
-                    elseif ing.Item then
-                        rawName = tostring(ing.Item)
-                    end
-                end)
-                rawName = rawName:lower()
-                local calculatedNeed = CombineHuge.ingredientNeed(dir, ing)
-                if rawName:find("agony") then
-                    needAgony = calculatedNeed
-                elseif rawName:find("shard") then
-                    needShard = calculatedNeed
+    -- Đọc trực tiếp danh sách nguyên liệu từ Recipes[6].Ingredients (bỏ qua cờ Hidden / FFlag)
+    if r6 and type(r6.Ingredients) == "table" and #r6.Ingredients > 0 then
+        for _, ing in ipairs(r6.Ingredients) do
+            local rawName = ""
+            pcall(function()
+                if ing.Item and type(ing.Item.GetId) == "function" then
+                    rawName = tostring(ing.Item:GetId() or "")
+                elseif ing.Item and ing.Item.Id then
+                    rawName = tostring(ing.Item.Id)
+                elseif ing.Item then
+                    rawName = tostring(ing.Item)
                 end
+            end)
+            local nameLower = rawName:lower()
+            local calculatedNeed = CombineHuge.ingredientNeed(dir, ing)
+            if nameLower:find("agony") then
+                needAgony = calculatedNeed
+            elseif nameLower:find("shard") then
+                needShard = calculatedNeed
             end
         end
     end
 
     local haveAgony = countItemFromSave("Agony")
     local haveShard = countItemFromSave("Shard")
+
     local isReady = (haveAgony >= needAgony and haveShard >= needShard)
+    local missingAgony = math.max(0, needAgony - haveAgony)
+    local missingShard = math.max(0, needShard - haveShard)
+    local pctAgony = math.clamp(haveAgony / math.max(1, needAgony), 0, 1)
+    local pctShard = math.clamp(haveShard / math.max(1, needShard), 0, 1)
+    local overallPct = (pctAgony + pctShard) / 2
 
     local statusText = ""
     if isReady then
@@ -193,12 +220,12 @@ function CombineHuge.getCombineProgress()
         local missing = {}
         local ready = {}
         if haveAgony < needAgony then
-            table.insert(missing, string.format("Agony %d/%d (thiếu %d)", haveAgony, needAgony, needAgony - haveAgony))
+            table.insert(missing, string.format("Agony %d/%d (thiếu %d)", haveAgony, needAgony, missingAgony))
         else
             table.insert(ready, string.format("Đủ Agony %d/%d", haveAgony, needAgony))
         end
         if haveShard < needShard then
-            table.insert(missing, string.format("Shard %d/%d (thiếu %d)", haveShard, needShard, needShard - haveShard))
+            table.insert(missing, string.format("Shard %d/%d (thiếu %d)", haveShard, needShard, missingShard))
         else
             table.insert(ready, string.format("Đủ Shard %d/%d", haveShard, needShard))
         end
@@ -209,21 +236,18 @@ function CombineHuge.getCombineProgress()
         end
     end
 
-    local pctAgony = math.clamp(haveAgony / math.max(1, needAgony), 0, 1)
-    local pctShard = math.clamp(haveShard / math.max(1, needShard), 0, 1)
-
     return {
         isReady = isReady,
         statusText = statusText,
         haveAgony = haveAgony,
         needAgony = needAgony,
-        missingAgony = math.max(0, needAgony - haveAgony),
+        missingAgony = missingAgony,
         pctAgony = pctAgony,
         haveShard = haveShard,
         needShard = needShard,
-        missingShard = math.max(0, needShard - haveShard),
+        missingShard = missingShard,
         pctShard = pctShard,
-        overallPct = (pctAgony + pctShard) / 2,
+        overallPct = overallPct,
     }
 end
 
@@ -408,6 +432,7 @@ end
 --   1. Machines: Mark Approached -> "HalloweenPetCraftingMachine"
 --   2. HalloweenCraftingMachine_GetQueue()
 --   3. HalloweenCraftingMachine_StartCraft("HalloweenGamesCombine", 6)
+-- Cơ chế: Mở trứng tức thì (Instant Hatch), KHÔNG qua hàng đợi, KHÔNG cần Claim
 -- =========================================================================
 
 function CombineHuge.checkAndRunCombine(state)
@@ -422,14 +447,19 @@ function CombineHuge.checkAndRunCombine(state)
         return
     end
 
+    -- 1. Kiểm tra nguyên liệu Index 6 trước khi teleport (In log rõ ràng theo yêu cầu của dj)
     local prog = CombineHuge.getCombineProgress()
+    print(string.format("[KizHub Combine] Recipe 6 Check -> Agony: có %d / cần %d | Shard: có %d / cần %d",
+        prog and prog.haveAgony or 0, prog and prog.needAgony or 10,
+        prog and prog.haveShard or 0, prog and prog.needShard or 300))
+
     if not (prog and prog.isReady) then
         state.combineStatus = prog and prog.statusText or "Thiếu nguyên liệu Combine Egg"
         state.nextCombineAt = now + (cfg.CombineCooldown or 10)
         return
     end
 
-    -- Bắt đầu hành trình tới máy mở Combine Egg (Recipe Index 6)
+    -- 2. Đã đủ nguyên liệu cho Recipe 6 -> Bắt đầu hành trình tới bệ máy mở Combine Egg
     state.excursion = "combine"
     local savedPos = Net.playerPos()
     toggleEggAnimation(true)
@@ -441,7 +471,7 @@ function CombineHuge.checkAndRunCombine(state)
             task.wait(0.8)
         end
 
-        -- Kích hoạt tín hiệu tiếp cận bệ máy
+        -- 2.1 Kích hoạt tín hiệu tiếp cận bệ máy (Mark Approached & Touch Pad)
         Net.netFire("Machines: Mark Approached", COMBINE_MACHINE_NAME)
         if mach then
             pcall(function()
@@ -456,20 +486,22 @@ function CombineHuge.checkAndRunCombine(state)
         end
         task.wait(0.2)
 
-        -- Đồng bộ hàng đợi máy
+        -- 2.2 Đồng bộ hàng đợi máy
         Net.netInvoke("HalloweenCraftingMachine_GetQueue")
         task.wait(0.2)
 
-        -- Bắn Remote StartCraft(COMBINE_MACHINE_ID, 6) liên tục chừng nào còn đủ nguyên liệu
+        -- 2.3 Bắn Remote StartCraft(COMBINE_MACHINE_ID, 6) liên tục chừng nào còn đủ nguyên liệu
         local maxContinuous = 50
         while maxContinuous > 0 and state.alive do
             maxContinuous = maxContinuous - 1
 
             local curProg = CombineHuge.getCombineProgress()
+            print(string.format("[KizHub Combine] Recipe 6 Check -> Agony: có %d / cần %d | Shard: có %d / cần %d",
+                curProg and curProg.haveAgony or 0, curProg and curProg.needAgony or 10,
+                curProg and curProg.haveShard or 0, curProg and curProg.needShard or 300))
+
             if not (curProg and curProg.isReady) then
-                print(string.format("[KizHub Combine] Không còn đủ nguyên liệu (Agony %d/%d, Shard %d/%d). Dừng chuỗi mở.",
-                    curProg and curProg.haveAgony or 0, curProg and curProg.needAgony or 10,
-                    curProg and curProg.haveShard or 0, curProg and curProg.needShard or 300))
+                print("[KizHub Combine] Đã hết nguyên liệu cho Recipe 6. Dừng chuỗi mở trứng.")
                 break
             end
 
@@ -481,7 +513,7 @@ function CombineHuge.checkAndRunCombine(state)
                 state.combineStatus = "Đã mở Combine Egg!"
                 print(string.format("[KizHub Combine] ✔ Mở thành công Combine Egg (Index %d)!", COMBINE_EGG_INDEX))
 
-                -- Chờ server trả Pet từ trứng vào Inventory rồi gửi Webhook
+                -- Chờ server trả Pet từ trứng vào Inventory (1.4s) rồi quét Webhook
                 task.wait(1.4)
                 checkAndNotifyNewPets(preSnap)
             else

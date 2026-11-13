@@ -31,6 +31,7 @@ local Config = {
 
     AutoCombine = true,
     TargetCombineRecipe = "Combine Egg",
+    TargetCombineIndex = 6,
     CombineCooldown = 30,
 
     -- [CÔNG THỨC COMBINE EGG CHUẨN]: 10 Masquerade Agony & 300 Shards
@@ -65,6 +66,7 @@ local K = {
     MACHINE_REACH   = 8,
     COMBINE_ID      = "HalloweenGamesCombine",
     COMBINE_MACHINE = "HalloweenPetCraftingMachine",
+    COMBINE_EGG_INDEX = 6,
     ZONES = {
         [1] = { Number = 1, Name = "Scarecrow Field",  Egg = "Straw Egg",       Pos = Vector3.new(-5315.60, 16.20, -3939.52) },
         [2] = { Number = 2, Name = "Statue Graveyard", Egg = "Marble Egg",      Pos = Vector3.new(-5496.83, 16.24, -3940.37) },
