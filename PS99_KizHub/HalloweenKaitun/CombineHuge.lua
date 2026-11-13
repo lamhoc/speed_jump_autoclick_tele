@@ -555,10 +555,18 @@ local function clickCraftButtonOnLeft()
                             local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
                             local bName = desc.Name:lower()
                             
+                            local childText = ""
+                            for _, c in ipairs(desc:GetChildren()) do
+                                if c:IsA("TextLabel") and c.Visible then
+                                    childText = childText .. " " .. c.Text:lower()
+                                end
+                            end
+                            local fullText = bText .. " " .. childText
+                            
                             -- Nút craft bên trái: Text/Name có "craft", "ghép", "chế", "make"
                             -- Tuyệt đối BỎ QUA nút "10" / "open 10" / "craft 10" bên phải
-                            local is10 = bText:find("10") or bName:find("10") or bText:find("open 10") or bText:find("craft 10")
-                            local isCraft = bText:find("craft") or bName:find("craft") or bText:find("ghép") or bText:find("chế") or bName:find("start")
+                            local is10 = fullText:find("10") or bName:find("10")
+                            local isCraft = fullText:find("craft") or bName:find("craft") or fullText:find("ghép") or fullText:find("chế") or bName:find("start") or fullText:find("mở")
                             
                             if isCraft and not is10 then
                                 table.insert(candidateButtons, { btn = desc, xPos = desc.AbsolutePosition.X })
