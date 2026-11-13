@@ -429,7 +429,18 @@ pcall(function()
 end)
 
 -- Tạo các nút bấm điều khiển
-createBtn("📋 Copy Log Mới", 0, 140, Color3.fromRGB(37, 99, 235), function()
+createBtn("🚀 Tele Máy", 0, 95, Color3.fromRGB(16, 185, 129), function()
+    pcall(function()
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = CFrame.new(-6721.63, 17.13, -4002.42)
+            StatusLabel.Text = "🚀 Đã tới trước mặt máy Combine!"
+            addLog("Đã teleport tới Pad máy Combine (-6721.63, 17.13, -4002.42)", Color3.fromRGB(52, 211, 153))
+        end
+    end)
+end)
+
+createBtn("📋 Copy Log", 100, 95, Color3.fromRGB(37, 99, 235), function()
     if lastCapturedText ~= "" then
         setclip(lastCapturedText)
         StatusLabel.Text = "📋 Đã copy log mới nhất vào Clipboard!"
@@ -438,16 +449,27 @@ createBtn("📋 Copy Log Mới", 0, 140, Color3.fromRGB(37, 99, 235), function()
     end
 end)
 
-createBtn("💾 Dump Halloween Data", 150, 160, Color3.fromRGB(147, 51, 234), function()
+createBtn("💾 Dump Data", 200, 110, Color3.fromRGB(147, 51, 234), function()
     dumpHalloweenData()
 end)
 
-createBtn("🗑️ Xóa Log", 320, 136, Color3.fromRGB(75, 85, 99), function()
+createBtn("🗑️ Xóa Log", 315, 65, Color3.fromRGB(75, 85, 99), function()
     for _, child in ipairs(LogScroll:GetChildren()) do
         if child:IsA("TextLabel") then child:Destroy() end
     end
     StatusLabel.Text = "📡 Trạng thái: Đang theo dõi..."
 end)
 
-addLog("SẴN SÀNG! Bạn chỉ cần tới máy và tự tay ấn nút Craft trong game.", Color3.fromRGB(52, 211, 153))
-addLog("Mọi Remote, Arguments và thông tin Nút bấm sẽ hiện ngay tại đây!", Color3.fromRGB(203, 213, 225))
+createBtn("❌ Tắt UI Máy", 385, 71, Color3.fromRGB(225, 29, 72), function()
+    pcall(function()
+        local Library = nil
+        pcall(function() Library = require(RS.Library) end)
+        if Library and Library.TabController and type(Library.TabController.CloseAll) == "function" then
+            Library.TabController.CloseAll()
+        end
+    end)
+    StatusLabel.Text = "Đã gọi CloseAll UI máy"
+end)
+
+addLog("SẴN SÀNG! Ấn '🚀 Tele Máy' để tới ngay trước mặt máy Combine.", Color3.fromRGB(52, 211, 153))
+addLog("Sau đó dj tự tay click nút Craft bên trái, bảng sẽ bắt trọn Remote!", Color3.fromRGB(203, 213, 225))

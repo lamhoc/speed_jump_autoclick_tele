@@ -406,7 +406,10 @@ function CombineHuge.combineMachineStand()
         end
     end
 
-    if not mach then return nil, nil end
+    if not mach then
+        -- Tọa độ Pad thực tế được dump chính xác từ Instance của game
+        return Vector3.new(-6721.63, 17.13, -4002.42), nil
+    end
     local pad = mach:FindFirstChild("Pad", true)
     if pad and pad:IsA("BasePart") then
         return pad.Position + Vector3.new(0, 3, 0), mach
