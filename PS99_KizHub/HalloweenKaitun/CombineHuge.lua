@@ -393,12 +393,26 @@ function CombineHuge.combineMachineStand()
         local iinter = inst and inst:FindFirstChild("INTERACT")
         mach = findInMachines(iinter and iinter:FindFirstChild("Machines"))
     end
-    if not mach then return nil end
+
+    if not mach then
+        for _, desc in ipairs(workspace:GetDescendants()) do
+            if desc:IsA("Model") then
+                local n = desc.Name
+                if n == K.COMBINE_MACHINE or n == "HalloweenPetCraftingMachine" or n == "Combine-o-Matic" or n == "HalloweenCraftingMachine" then
+                    mach = desc
+                    break
+                end
+            end
+        end
+    end
+
+    if not mach then return nil, nil end
     local pad = mach:FindFirstChild("Pad", true)
     if pad and pad:IsA("BasePart") then
-        return pad.Position + Vector3.new(0, 3, 0)
+        return pad.Position + Vector3.new(0, 3, 0), mach
     end
-    return mach:GetPivot().Position + Vector3.new(0, 3, 6)
+    local cf, _ = mach:GetBoundingBox()
+    return cf.Position + Vector3.new(0, 3, 4), mach
 end
 
 function CombineHuge.activeQueues()
@@ -495,6 +509,76 @@ local function checkAndNotifyNewPets(prevSnap)
 end
 
 -- =========================================================================
+-- Trigger tương tác GUI nút Craft bên trái
+-- =========================================================================
+local function triggerGuiClick(btn)
+    if not btn then return false end
+    local triggered = false
+    if type(firesignal) == "function" then
+        pcall(function() firesignal(btn.Activated) triggered = true end)
+        pcall(function() firesignal(btn.MouseButton1Click) triggered = true end)
+        pcall(function() firesignal(btn.MouseButton1Down) end)
+        pcall(function() firesignal(btn.MouseButton1Up) end)
+    end
+    if type(getconnections) == "function" then
+        pcall(function()
+            for _, c in ipairs(getconnections(btn.Activated) or {}) do
+                if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                triggered = true
+            end
+            for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
+                if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                triggered = true
+            end
+        end)
+    end
+    return triggered
+end
+
+local function clickCraftButtonOnLeft()
+    local clicked = false
+    pcall(function()
+        local lp = game:GetService("Players").LocalPlayer
+        local pgui = lp and lp:FindFirstChildOfClass("PlayerGui")
+        if not pgui then return end
+
+        for _, gui in ipairs(pgui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                local gName = gui.Name:lower()
+                if not gName:find("chat") and not gName:find("kizhub") and not gName:find("topbar") and not gName:find("roblox") then
+                    local candidateButtons = {}
+                    for _, desc in ipairs(gui:GetDescendants()) do
+                        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                            local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                            local bName = desc.Name:lower()
+                            
+                            -- Nút craft bên trái: Text/Name có "craft", "ghép", "chế", "make"
+                            -- Tuyệt đối BỎ QUA nút "10" / "open 10" / "craft 10" bên phải
+                            local is10 = bText:find("10") or bName:find("10") or bText:find("open 10") or bText:find("craft 10")
+                            local isCraft = bText:find("craft") or bName:find("craft") or bText:find("ghép") or bText:find("chế") or bName:find("start")
+                            
+                            if isCraft and not is10 then
+                                table.insert(candidateButtons, { btn = desc, xPos = desc.AbsolutePosition.X })
+                            end
+                        end
+                    end
+
+                    -- Ưu tiên nút ở bên TRÁI (AbsolutePosition.X nhỏ hơn)
+                    if #candidateButtons > 0 then
+                        table.sort(candidateButtons, function(a, b) return a.xPos < b.xPos end)
+                        local leftCraftBtn = candidateButtons[1].btn
+                        if triggerGuiClick(leftCraftBtn) then
+                            clicked = true
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return clicked
+end
+
+-- =========================================================================
 -- Vòng lặp kiểm tra và tự động mở Combine Egg
 -- =========================================================================
 function CombineHuge.checkAndRunCombine(state)
@@ -503,144 +587,132 @@ function CombineHuge.checkAndRunCombine(state)
     local now = os.clock()
     if now < (state.nextCombineAt or 0) then return end
 
+    -- 1. Kiểm tra tiến độ nguyên liệu trực tiếp
+    local prog = CombineHuge.getCombineProgress()
     local recipes, dir = CombineHuge.combineRecipes()
-    if not dir or #recipes == 0 then
-        state.combineStatus = "Chưa nạp công thức máy"
-        state.nextCombineAt = now + (cfg.CombineCooldown or 30)
-        return
-    end
+    local dirId = (dir and dir._id) or K.COMBINE_ID or "HalloweenGamesCombine"
 
+    -- 2. Kiểm tra hàng đợi claim
     local q = CombineHuge.activeQueues()
-    local readyClaims, queued = {}, {}
-    for k, item in pairs(q) do
+    local readyClaims = {}
+    for k, item in pairs(q or {}) do
         if type(item) == "table" then
             local uid = item.UID or (type(k) == "string" and k) or nil
             local recIdx = item.RecipeIndex or (item.Recipe and item.Recipe.Index)
             local rem = tonumber(item.Remaining) or tonumber(item.TimeLeft) or 0
-            if recIdx then
-                if rem <= 0 and uid then
-                    table.insert(readyClaims, { UID = uid, RecipeIndex = recIdx })
-                else
-                    queued[recIdx] = item
-                end
+            if recIdx and rem <= 0 and uid then
+                table.insert(readyClaims, { UID = uid, RecipeIndex = recIdx })
             end
         end
     end
 
-    local targetRecipeName = cfg.TargetCombineRecipe or "Combine Egg"
-    local starts = {}
-    local waiting = {}
-
-    for i = #recipes, 1, -1 do
-        local r = recipes[i]
-        local isTarget = false
-        if targetRecipeName == nil or targetRecipeName == "" then
-            isTarget = true
-        elseif r.name == targetRecipeName then
-            isTarget = true
-        elseif targetRecipeName == "Combine Egg" and (r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg")) then
-            isTarget = true
-        elseif r.name:lower():find("combine") or r.name:lower():find("egg") then
-            isTarget = true
-        elseif #recipes == 1 then
-            isTarget = true
-        end
-
-        if isTarget and r.open and not queued[r.index] then
-            if r.ready then
-                table.insert(starts, r)
-            else
-                local missText = (r.missing and r.missing ~= "") and r.missing or r.summary
-                table.insert(waiting, missText)
-            end
-        elseif isTarget and queued[r.index] and (tonumber(queued[r.index].Remaining) or 0) > 0 then
-            local rem = tonumber(queued[r.index].Remaining) or 0
-            state.combineStatus = string.format("Đang ghép (%ds)", math.floor(rem))
+    -- 3. Đánh giá sẵn sàng ghép: Đủ Agony (>= 10) & Shard (>= 300)
+    local canCraft = (prog and prog.isReady == true)
+    if not canCraft and type(recipes) == "table" then
+        for _, r in ipairs(recipes) do
+            if r.ready then canCraft = true break end
         end
     end
 
-    if #readyClaims == 0 and #starts == 0 then
-        if #waiting > 0 then
-            state.combineStatus = "Thiếu: " .. waiting[1]
-        else
-            state.combineStatus = CombineHuge.getCombineStatusText()
-        end
+    if #readyClaims == 0 and not canCraft then
+        state.combineStatus = (prog and prog.statusText) or CombineHuge.getCombineStatusText()
         state.nextCombineAt = now + (cfg.CombineCooldown or 15)
         return
     end
 
+    -- 4. Bắt đầu chuyến đi tới máy Combine
     state.excursion = "combine"
     local savedPos = Net.playerPos()
 
     pcall(function()
-        local stand = CombineHuge.combineMachineStand()
+        local stand, mach = CombineHuge.combineMachineStand()
         if stand then
             Net.teleportTo(stand)
-            task.wait(0.8)
+            task.wait(0.6)
         end
 
-        -- 1. Claim các mẻ đã ghép xong nếu có queue
+        -- Kích hoạt tiếp cận máy và ProximityPrompt
+        pcall(function()
+            Net.netFire("Machines: Mark Approached", dirId)
+            Net.netFire("Machines: Mark Approached", K.COMBINE_MACHINE)
+            if mach then
+                Net.netFire("Machines: Mark Approached", mach)
+                Net.netFire("Machines: Mark Approached", mach.Name)
+                for _, prompt in ipairs(mach:GetDescendants()) do
+                    if prompt:IsA("ProximityPrompt") then
+                        if type(fireproximityprompt) == "function" then
+                            fireproximityprompt(prompt)
+                        end
+                    end
+                end
+            end
+        end)
+        task.wait(0.4)
+
+        -- 4.1 Claim các mẻ đã ghép xong
         for _, claim in ipairs(readyClaims) do
             local preSnap = snapshotPetInventory()
             local okC, resC = Net.netInvoke("HalloweenCraftingMachine_Claim", claim.UID)
             if okC and resC then
-                local recName = targetRecipeName
-                for _, r in ipairs(recipes) do
-                    if r.index == claim.RecipeIndex then
-                        recName = r.name
-                    end
-                end
-                state.combineStatus = "Đã nhận " .. recName
+                state.combineStatus = "Đã nhận mẻ ghép"
                 task.wait(0.5)
                 checkAndNotifyNewPets(preSnap)
             end
             task.wait(0.4)
         end
 
-        -- 2. Bắt đầu ghép: Mở Combine Egg (Hỗ trợ Open 10 và Craft liên tục cho tới khi hết nguyên liệu)
-        for _, r in ipairs(starts) do
-            local maxTries = 50
-            while maxTries > 0 do
-                maxTries = maxTries - 1
-                local again = CombineHuge.combineRecipes()
-                local fresh = nil
-                for _, x in ipairs(again) do
-                    if x.index == r.index then fresh = x break end
+        -- 4.2 Tiến hành ghép: Nhấn nút Craft bên trái (Craft 1 quả mỗi lần thay vì Open 10)
+        local targetIndex = 1
+        if type(recipes) == "table" and #recipes > 0 then
+            for _, r in ipairs(recipes) do
+                if r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg") then
+                    targetIndex = r.index
+                    break
                 end
-                if not (fresh and fresh.ready) then
-                    break -- Đã hết nguyên liệu
-                end
-
-                local preSnap = snapshotPetInventory()
-                local crafted = false
-
-                -- Thử gọi Open 10 trước nếu đủ nguyên liệu
-                local ok10, res10 = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index, 10)
-                if ok10 and (res10 == true or type(res10) == "table") then
-                    crafted = true
-                    state.combineStatus = "Đã mở 10 " .. r.name
-                else
-                    -- Fallback gọi Craft 1
-                    local okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index, 1)
-                    if not okS or resS == false then
-                        okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dir._id, r.index)
-                    end
-                    if okS and (resS == true or type(resS) == "table") then
-                        crafted = true
-                        state.combineStatus = "Đã mở 1 " .. r.name
-                    else
-                        state.combineStatus = "Ghép dừng: " .. tostring(resS or res10)
-                        break
-                    end
-                end
-
-                if crafted then
-                    task.wait(0.6) -- Chờ server sinh pet vào Inventory
-                    checkAndNotifyNewPets(preSnap)
-                end
-                task.wait(0.4)
             end
         end
+
+        local maxCraftAttempts = 50
+        while maxCraftAttempts > 0 and state.alive do
+            maxCraftAttempts = maxCraftAttempts - 1
+            local curProg = CombineHuge.getCombineProgress()
+            if not (curProg and curProg.isReady) then
+                break -- Đã hết nguyên liệu
+            end
+
+            local preSnap = snapshotPetInventory()
+            local crafted = false
+
+            -- [YÊU CẦU CỦA DJ]: Ấn nút Craft bên trái (thay vì nút Open 10 bên phải)
+            clickCraftButtonOnLeft()
+
+            -- Gọi Remote StartCraft 1 (tuyệt đối KHÔNG truyền 10)
+            local okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dirId, targetIndex)
+            if not okS or resS == false then
+                okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dirId, targetIndex, 1)
+            end
+
+            if (okS and (resS == true or type(resS) == "table")) or clickCraftButtonOnLeft() then
+                crafted = true
+                state.combineStatus = string.format("Đã ấn Craft 1 Combine Egg (%d Agony, %d Shard còn lại)", math.max(0, curProg.haveAgony - 10), math.max(0, curProg.haveShard - 300))
+            else
+                state.combineStatus = "Ghép dừng: " .. tostring(resS)
+                break
+            end
+
+            if crafted then
+                task.wait(0.8)
+                checkAndNotifyNewPets(preSnap)
+            end
+            task.wait(0.5)
+        end
+
+        -- Đóng popup giao diện máy nếu có
+        pcall(function()
+            if G and G.TabController and type(G.TabController.CloseAll) == "function" then
+                G.TabController.CloseAll()
+            end
+        end)
     end)
 
     if savedPos and state.alive then
