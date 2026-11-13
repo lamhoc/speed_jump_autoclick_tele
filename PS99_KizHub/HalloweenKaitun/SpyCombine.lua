@@ -1,12 +1,13 @@
 -- =========================================================================
 -- PS99_KizHub/HalloweenKaitun/SpyCombine.lua
--- Công cụ giám sát thời gian thực & Dump dữ liệu sự kiện Halloween PS99
+-- SPY SIÊU AN TOÀN & KHÔNG LỖI CHO SỰ KIỆN HALLOWEEN PET SIMULATOR 99
 -- Tác giả: VANTA [JHON369] | Dành riêng cho dj
--- Chức năng:
--- 1. Bắt trọn gói mọi RemoteFunction / RemoteEvent khi ấn Craft Combine Egg
--- 2. Bắt chi tiết nút GUI được click (Tên, Text, Vị trí X/Y trái/phải, Đường dẫn)
--- 3. Dump toàn bộ Game Data (Directory, Recipes, Model Máy, Tọa độ, Queue, Inventory)
--- 4. Tự động sao chép mã lệnh thực thi vào Clipboard
+-- Thiết kế:
+--   - KHÔNG can thiệp vào Library.Network (tránh làm rỗng UI công thức)
+--   - Hook __namecall thụ động 100% bằng newcclosure, xử lý log trong luồng riêng
+--   - Bộ tuần tự hóa safeSerialize chống crash khi gặp Instance, CFrame, Circular Table
+--   - Bắt chính xác tên Remote, Method (Invoke/Fire), và toàn bộ tham số
+--   - Có sẵn các nút bấm test tương tác GUI trực tiếp trên màn hình
 -- =========================================================================
 
 local Players = game:GetService("Players")
@@ -18,7 +19,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
 
--- Kiểm tra hỗ trợ Executor
+-- Hỗ trợ Clipboard đa nền tảng
 local setclip = setclipboard or toclipboard or (Clipboard and Clipboard.set) or function() end
 local getgenvFn = (type(getgenv) == "function" and getgenv) or function() return _G end
 
@@ -29,10 +30,65 @@ if getgenvFn()._HalloweenSpyGui then
 end
 
 -- =========================================================================
--- 1. TẠO GIAO DIỆN SPY UI NỔI TRÊN MÀN HÌNH
+-- 1. HÀM CHUYỂN ĐỔI THAM SỐ AN TOÀN TUYỆT ĐỐI (KHÔNG CRASH)
+-- =========================================================================
+local function safeSerialize(val, depth, visited)
+    depth = depth or 0
+    visited = visited or {}
+    if depth > 3 then return "..." end
+
+    local t = typeof(val)
+    if t == "string" then
+        return string.format("%q", val)
+    elseif t == "number" or t == "boolean" then
+        return tostring(val)
+    elseif t == "nil" then
+        return "nil"
+    elseif t == "Instance" then
+        return string.format("game.%s", val:GetFullName())
+    elseif t == "Vector3" then
+        return string.format("Vector3.new(%.2f, %.2f, %.2f)", val.X, val.Y, val.Z)
+    elseif t == "CFrame" then
+        local p = val.Position
+        return string.format("CFrame.new(%.2f, %.2f, %.2f)", p.X, p.Y, p.Z)
+    elseif t == "Color3" then
+        return string.format("Color3.fromRGB(%d, %d, %d)", math.floor(val.R * 255), math.floor(val.G * 255), math.floor(val.B * 255))
+    elseif t == "table" then
+        if visited[val] then return "<CircularTable>" end
+        visited[val] = true
+
+        local parts = {}
+        local count = 0
+        local isArray = true
+        for k, _ in pairs(val) do
+            count = count + 1
+            if type(k) ~= "number" or k ~= count then isArray = false end
+            if count > 8 then table.insert(parts, "..."); break end
+        end
+
+        local cur = 0
+        for k, v in pairs(val) do
+            cur = cur + 1
+            if cur > 8 then break end
+            local vStr = safeSerialize(v, depth + 1, visited)
+            if isArray then
+                table.insert(parts, vStr)
+            else
+                local kStr = (type(k) == "string" and k:match("^[%a_][%w_]*$")) and k or string.format("[%s]", safeSerialize(k, depth + 1, visited))
+                table.insert(parts, string.format("%s = %s", kStr, vStr))
+            end
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    else
+        return string.format("<%s>", tostring(val))
+    end
+end
+
+-- =========================================================================
+-- 2. TẠO GIAO DIỆN SPY UI NỔI TRÊN MÀN HÌNH
 -- =========================================================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "KizHub_HalloweenSpy"
+ScreenGui.Name = "KizHub_HalloweenSpy_Safe"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -51,28 +107,28 @@ getgenvFn()._HalloweenSpyGui = ScreenGui
 
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 480, 0, 360)
-MainFrame.Position = UDim2.new(0.5, -240, 0.5, -180)
-MainFrame.BackgroundColor3 = Color3.fromRGB(13, 17, 26)
+MainFrame.Size = UDim2.new(0, 520, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -260, 0.5, -190)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 23, 42)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
 
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 local Stroke = Instance.new("UIStroke", MainFrame)
-Stroke.Color = Color3.fromRGB(168, 85, 247) -- Tím Halloween neon
+Stroke.Color = Color3.fromRGB(147, 51, 234)
 Stroke.Thickness = 1.5
 
 -- Header
 local Header = Instance.new("Frame", MainFrame)
 Header.Name = "Header"
 Header.Size = UDim2.new(1, 0, 0, 38)
-Header.BackgroundColor3 = Color3.fromRGB(22, 27, 40)
+Header.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
 Header.BorderSizePixel = 0
 Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 10)
 
 local Title = Instance.new("TextLabel", Header)
-Title.Text = "🔮 KizHub | Halloween Combine Spy & Dumper"
+Title.Text = "🔮 KizHub | Safe Remote Spy - Halloween Combine"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
 Title.TextColor3 = Color3.fromRGB(216, 180, 254)
@@ -88,14 +144,14 @@ CloseBtn.TextSize = 14
 CloseBtn.TextColor3 = Color3.fromRGB(248, 113, 113)
 CloseBtn.Position = UDim2.new(1, -32, 0, 6)
 CloseBtn.Size = UDim2.new(0, 26, 0, 26)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(38, 24, 34)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(51, 25, 35)
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
 -- Status Box
 local StatusLabel = Instance.new("TextLabel", MainFrame)
 StatusLabel.Name = "StatusLabel"
-StatusLabel.Text = "📡 Trạng thái: Đang theo dõi... Hãy tới máy và tự ấn nút Craft!"
+StatusLabel.Text = "📡 Trạng thái: Đang theo dõi... Hãy tới máy và tự tay ấn nút!"
 StatusLabel.Font = Enum.Font.GothamMedium
 StatusLabel.TextSize = 11
 StatusLabel.TextColor3 = Color3.fromRGB(52, 211, 153)
@@ -108,8 +164,8 @@ StatusLabel.BackgroundTransparency = 1
 local LogScroll = Instance.new("ScrollingFrame", MainFrame)
 LogScroll.Name = "LogScroll"
 LogScroll.Position = UDim2.new(0, 12, 0, 68)
-LogScroll.Size = UDim2.new(1, -24, 1, -120)
-LogScroll.BackgroundColor3 = Color3.fromRGB(8, 11, 18)
+LogScroll.Size = UDim2.new(1, -24, 1, -125)
+LogScroll.BackgroundColor3 = Color3.fromRGB(10, 14, 26)
 LogScroll.BorderSizePixel = 0
 LogScroll.ScrollBarThickness = 5
 LogScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -128,15 +184,15 @@ LogPadding.PaddingRight = UDim.new(0, 8)
 
 -- Footer Buttons
 local BtnContainer = Instance.new("Frame", MainFrame)
-BtnContainer.Position = UDim2.new(0, 12, 1, -44)
-BtnContainer.Size = UDim2.new(1, -24, 0, 34)
+BtnContainer.Position = UDim2.new(0, 12, 1, -48)
+BtnContainer.Size = UDim2.new(1, -24, 0, 36)
 BtnContainer.BackgroundTransparency = 1
 
 local function createBtn(text, xPos, width, color, callback)
     local btn = Instance.new("TextButton", BtnContainer)
     btn.Text = text
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 11
+    btn.TextSize = 10
     btn.TextColor3 = Color3.fromRGB(248, 250, 252)
     btn.BackgroundColor3 = color
     btn.Position = UDim2.new(0, xPos, 0, 0)
@@ -146,12 +202,10 @@ local function createBtn(text, xPos, width, color, callback)
     return btn
 end
 
-local lastCapturedText = ""
+local lastCapturedCommand = ""
 
 local function addLog(text, color)
     print("[HalloweenSpy] " .. text)
-    lastCapturedText = text
-
     local row = Instance.new("TextLabel", LogScroll)
     row.Text = string.format("[%s] %s", os.date("%H:%M:%S"), text)
     row.Font = Enum.Font.Code
@@ -163,9 +217,8 @@ local function addLog(text, color)
     row.AutomaticSize = Enum.AutomaticSize.Y
     row.BackgroundTransparency = 1
 
-    -- Giới hạn số dòng tối đa 100
     local children = LogScroll:GetChildren()
-    if #children > 102 then
+    if #children > 120 then
         children[3]:Destroy()
     end
     task.defer(function()
@@ -174,238 +227,74 @@ local function addLog(text, color)
 end
 
 -- =========================================================================
--- 2. HÀM DUMP DỮ LIỆU SỰ KIỆN HALLOWEEN TOÀN DIỆN
--- =========================================================================
-local function dumpHalloweenData()
-    addLog("=== BẮT ĐẦU DUMP DỮ LIỆU SỰ KIỆN HALLOWEEN ===", Color3.fromRGB(250, 204, 21))
-    local dumpResult = {}
-    table.insert(dumpResult, "==================================================")
-    table.insert(dumpResult, "PET SIMULATOR 99 - HALLOWEEN EVENT DATA DUMP")
-    table.insert(dumpResult, "Time: " .. os.date("%Y-%m-%d %H:%M:%S"))
-    table.insert(dumpResult, "Player: " .. LocalPlayer.Name)
-    table.insert(dumpResult, "==================================================\n")
-
-    -- 2.1 Quét Save Data (Save.InstanceVars & Inventory)
-    pcall(function()
-        local Library = nil
-        pcall(function() Library = require(RS:WaitForChild("Library", 3)) end)
-        if not Library then
-            pcall(function() Library = require(RS:WaitForChild("LibraryClient", 3):WaitForChild("Library", 3)) end)
-        end
-
-        local Save = nil
-        if Library and Library.Save and type(Library.Save.Get) == "function" then
-            Save = Library.Save.Get()
-        end
-
-        if Save then
-            table.insert(dumpResult, "[1. SAVE DATA]")
-            table.insert(dumpResult, "- MaximumZone: " .. tostring(Save.MaximumZone))
-            if Save.HalloweenCraftingQueue then
-                table.insert(dumpResult, "- HalloweenCraftingQueue: " .. HttpService:JSONEncode(Save.HalloweenCraftingQueue))
-            end
-            if Save.InstanceVars and Save.InstanceVars.HalloweenGames then
-                table.insert(dumpResult, "- InstanceVars.HalloweenGames: " .. HttpService:JSONEncode(Save.InstanceVars.HalloweenGames))
-            end
-
-            -- Quét Shards & Agony trong Save.Inventory
-            local agonyCount = 0
-            local shardCount = 0
-            if Save.Inventory then
-                if type(Save.Inventory.Pet) == "table" then
-                    for uid, p in pairs(Save.Inventory.Pet) do
-                        if type(p) == "table" and type(p.id) == "string" and p.id:lower():find("agony") then
-                            agonyCount = agonyCount + (tonumber(p._am) or 1)
-                        end
-                    end
-                end
-                for _, folderName in ipairs({ "Misc", "Currency", "Item" }) do
-                    if type(Save.Inventory[folderName]) == "table" then
-                        for _, it in pairs(Save.Inventory[folderName]) do
-                            if type(it) == "table" and type(it.id) == "string" and it.id:lower():find("shard") then
-                                shardCount = shardCount + (tonumber(it._am) or 1)
-                            end
-                        end
-                    end
-                end
-            end
-            table.insert(dumpResult, string.format("- Inventory Shards: %d | Agony Pets: %d\n", shardCount, agonyCount))
-        end
-
-        -- 2.2 Quét Directory (HalloweenCraftingMachines)
-        local Dir = (Library and Library.Directory) or nil
-        if Dir then
-            table.insert(dumpResult, "[2. DIRECTORY CRAFTING MACHINES]")
-            local craftMachines = rawget(Dir, "HalloweenCraftingMachines") or rawget(Dir, "CraftingMachines")
-            if type(craftMachines) == "table" then
-                for machKey, machData in pairs(craftMachines) do
-                    table.insert(dumpResult, string.format("Machine Key: %s (Type: %s)", tostring(machKey), tostring(machData._id or "N/A")))
-                    if type(machData.Recipes) == "table" then
-                        table.insert(dumpResult, string.format("  -> Total Recipes: %d", #machData.Recipes))
-                        for idx, rec in ipairs(machData.Recipes) do
-                            local resId = (rec.Result and type(rec.Result.GetId) == "function" and rec.Result:GetId()) or tostring(rec.Result)
-                            table.insert(dumpResult, string.format("  [Recipe #%d]: %s", idx, tostring(resId)))
-                            if type(rec.Ingredients) == "table" then
-                                for ingIdx, ing in ipairs(rec.Ingredients) do
-                                    local ingId = (ing.Item and type(ing.Item.GetId) == "function" and ing.Item:GetId()) or tostring(ing.Item)
-                                    local ingAmt = tostring(ing.Amount or ing.AmountFFlag or "?")
-                                    table.insert(dumpResult, string.format("    - Ing #%d: %s (Amount: %s)", ingIdx, tostring(ingId), ingAmt))
-                                end
-                            end
-                        end
-                    end
-                end
-            else
-                table.insert(dumpResult, "  Không tìm thấy bảng HalloweenCraftingMachines trong Directory!\n")
-            end
-        end
-
-        -- 2.3 Quét Models trong Workspace
-        table.insert(dumpResult, "\n[3. WORKSPACE MACHINES MODELS]")
-        local foundModels = 0
-        for _, desc in ipairs(workspace:GetDescendants()) do
-            if desc:IsA("Model") then
-                local nl = desc.Name:lower()
-                if nl:find("craft") or nl:find("combine") or nl:find("halloween") then
-                    foundModels = foundModels + 1
-                    local cf = desc:GetPivot()
-                    table.insert(dumpResult, string.format("- Model: %s | Class: %s | Pos: %s", desc:GetFullName(), desc.ClassName, tostring(cf.Position)))
-                    for _, child in ipairs(desc:GetChildren()) do
-                        if child:IsA("ProximityPrompt") then
-                            table.insert(dumpResult, string.format("  * Has ProximityPrompt: %s (ActionText: %s)", child.Name, child.ActionText))
-                        elseif child.Name == "Pad" then
-                            table.insert(dumpResult, string.format("  * Has Pad at: %s", tostring(child.Position)))
-                        end
-                    end
-                end
-            end
-        end
-        if foundModels == 0 then
-            table.insert(dumpResult, "  Không tìm thấy model máy nào trong Workspace!")
-        end
-    end)
-
-    table.insert(dumpResult, "\n==================================================")
-    table.insert(dumpResult, "DUMP HOÀN TẤT - ĐÃ COPY TOÀN BỘ VÀO CLIPBOARD!")
-    table.insert(dumpResult, "==================================================")
-
-    local fullDumpText = table.concat(dumpResult, "\n")
-    setclip(fullDumpText)
-    addLog("ĐÃ DUMP XONG! Toàn bộ data sự kiện đã được copy vào Clipboard.", Color3.fromRGB(52, 211, 153))
-    StatusLabel.Text = "✅ Dump thành công! Dữ liệu đã lưu vào Clipboard."
-end
-
--- =========================================================================
--- 3. HOOK THEO DÕI REMOTES (InvokeServer & FireServer)
+-- 3. HOOK __NAMECALL THỤ ĐỘNG - 100% AN TOÀN, KHÔNG CHẶN, KHÔNG SỬA TRẢ VỀ
 -- =========================================================================
 pcall(function()
-    local oldNamecall = nil
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        local args = { ... }
+    if type(hookmetamethod) ~= "function" then
+        addLog("⚠️ Executor không hỗ trợ hookmetamethod! Vui lòng dùng Volt/Delta/Wave.", Color3.fromRGB(239, 68, 68))
+        return
+    end
 
-        if method == "InvokeServer" or method == "FireServer" then
-            local rName = tostring(self.Name)
+    local oldNamecall = nil
+    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        
+        if (method == "InvokeServer" or method == "FireServer") and typeof(self) == "Instance" then
+            local rName = self.Name
             local rLower = rName:lower()
 
-            -- Lọc các remote liên quan tới sự kiện Halloween, Craft, Machine, Combine, Egg, v.v.
+            -- Lọc các Remote liên quan tới Craft, Machine, Halloween, Combine, Egg, Start, Claim
             local isRelevant = rLower:find("craft") or rLower:find("combine") or rLower:find("halloween")
                 or rLower:find("machine") or rLower:find("egg") or rLower:find("start") or rLower:find("claim")
                 or rLower:find("forge")
 
             if isRelevant then
-                local formattedArgs = {}
-                for i, arg in ipairs(args) do
-                    local t = type(arg)
-                    if t == "string" then
-                        table.insert(formattedArgs, string.format("%q", arg))
-                    elseif t == "number" or t == "boolean" then
-                        table.insert(formattedArgs, tostring(arg))
-                    elseif t == "table" then
-                        pcall(function() table.insert(formattedArgs, HttpService:JSONEncode(arg)) end)
-                    else
-                        table.insert(formattedArgs, string.format("<%s>", tostring(arg)))
+                local rawArgs = { ... }
+                -- Tách việc format và hiển thị vào thread riêng biệt hoàn toàn
+                task.spawn(function()
+                    local formatted = {}
+                    for _, a in ipairs(rawArgs) do
+                        table.insert(formatted, safeSerialize(a))
                     end
-                end
-
-                local callStr = string.format("[%s] %s:%s(%s)", method, rName, method, table.concat(formattedArgs, ", "))
-                addLog(callStr, Color3.fromRGB(244, 114, 182))
-                StatusLabel.Text = "🎯 Bắt được: " .. rName
-
-                -- Tự động copy câu lệnh chuẩn vào Clipboard
-                pcall(function()
-                    setclip(string.format("[Remote] %s:%s(%s)", rName, method, table.concat(formattedArgs, ", ")))
+                    local codePayload = string.format("game:GetService(\"ReplicatedStorage\").Network[%q]:%s(%s)", rName, method, table.concat(formatted, ", "))
+                    local displayLine = string.format("[%s] %s(%s)", method, rName, table.concat(formatted, ", "))
+                    
+                    lastCapturedCommand = codePayload
+                    addLog(displayLine, Color3.fromRGB(244, 114, 182))
+                    StatusLabel.Text = "🎯 Bắt Remote: " .. rName
+                    pcall(function() setclip(codePayload) end)
                 end)
             end
         end
 
+        -- Luôn luôn thực thi và trả về nguyên trạng dữ liệu gốc
         return oldNamecall(self, ...)
-    end)
-    addLog("✓ Đã cài đặt Hook __namecall RemoteSpy", Color3.fromRGB(56, 189, 248))
-end)
+    end))
 
--- Hook tầng 2: Network module nội bộ của Pet Simulator 99
-task.spawn(function()
-    pcall(function()
-        local Library = nil
-        pcall(function() Library = require(RS:WaitForChild("Library", 3)) end)
-        if not Library then
-            pcall(function() Library = require(RS:WaitForChild("LibraryClient", 3):WaitForChild("Library", 3)) end)
-        end
-        local Net = Library and Library.Network
-        if Net then
-            if type(Net.Invoke) == "function" then
-                local origInvoke = Net.Invoke
-                Net.Invoke = function(name, ...)
-                    local args = { ... }
-                    local nLower = tostring(name):lower()
-                    if nLower:find("craft") or nLower:find("combine") or nLower:find("halloween") or nLower:find("machine") then
-                        addLog(string.format("[Network.Invoke] %s (args: %s)", tostring(name), HttpService:JSONEncode(args)), Color3.fromRGB(192, 132, 252))
-                    end
-                    return origInvoke(name, ...)
-                end
-            end
-            if type(Net.Fire) == "function" then
-                local origFire = Net.Fire
-                Net.Fire = function(name, ...)
-                    local args = { ... }
-                    local nLower = tostring(name):lower()
-                    if nLower:find("craft") or nLower:find("combine") or nLower:find("halloween") or nLower:find("machine") then
-                        addLog(string.format("[Network.Fire] %s (args: %s)", tostring(name), HttpService:JSONEncode(args)), Color3.fromRGB(167, 139, 250))
-                    end
-                    return origFire(name, ...)
-                end
-            end
-            addLog("✓ Đã cài đặt Hook PS99 Library.Network", Color3.fromRGB(56, 189, 248))
-        end
-    end)
+    addLog("✓ Đã cài đặt Safe Hook __namecall (Bảo toàn dữ liệu game)", Color3.fromRGB(56, 189, 248))
 end)
 
 -- =========================================================================
--- 4. THEO DÕI NÚT GUI ĐƯỢC CLICK (Xác định nút bên trái hay bên phải)
+-- 4. THEO DÕI NÚT GUI CLICK (KHÔNG LẶP QUÉT NẶNG MÁY)
 -- =========================================================================
 pcall(function()
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local pos = UserInputService:GetMouseLocation()
+            local mousePos = UserInputService:GetMouseLocation()
             task.defer(function()
                 pcall(function()
                     for _, gui in ipairs(PlayerGui:GetChildren()) do
-                        if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "KizHub_HalloweenSpy" then
+                        if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "KizHub_HalloweenSpy_Safe" then
                             for _, desc in ipairs(gui:GetDescendants()) do
                                 if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                                    local absPos = desc.AbsolutePosition
-                                    local absSize = desc.AbsoluteSize
-                                    if pos.X >= absPos.X and pos.X <= absPos.X + absSize.X
-                                       and pos.Y >= absPos.Y and pos.Y <= absPos.Y + absSize.Y then
+                                    local ap = desc.AbsolutePosition
+                                    local as = desc.AbsoluteSize
+                                    if mousePos.X >= ap.X and mousePos.X <= ap.X + as.X
+                                       and mousePos.Y >= ap.Y and mousePos.Y <= ap.Y + as.Y then
                                         
                                         local bText = (desc:IsA("TextButton") and desc.Text) or "(ImageButton)"
-                                        local side = (desc.Position.X.Scale < 0.5 or desc.AnchorPoint.X < 0.5) and "BÊN TRÁI" or "BÊN PHẢI"
-                                        local fullPath = desc:GetFullName()
-
-                                        local clickLog = string.format("[GUI CLICK] Nút: %q | Text: %q | Vị trí: %s (X: %.0f) | Path: %s", desc.Name, bText, side, absPos.X, fullPath)
-                                        addLog(clickLog, Color3.fromRGB(250, 204, 21))
-                                        StatusLabel.Text = string.format("🖱️ Đã click nút: %s (%s)", desc.Name, side)
+                                        local side = (ap.X < (workspace.CurrentCamera.ViewportSize.X / 2)) and "BÊN TRÁI" or "BÊN PHẢI"
+                                        addLog(string.format("[CLICK GUI] %s | Nút: %q | Text: %q", side, desc.Name, bText), Color3.fromRGB(250, 204, 21))
                                     end
                                 end
                             end
@@ -415,21 +304,37 @@ pcall(function()
             end)
         end
     end)
-    addLog("✓ Đã kích hoạt GUI Button Tracker (Nhận diện click trái/phải)", Color3.fromRGB(56, 189, 248))
+    addLog("✓ Đã kích hoạt theo dõi click nút giao diện", Color3.fromRGB(56, 189, 248))
 end)
 
--- Hook ProximityPrompt
-pcall(function()
-    local PPS = game:GetService("ProximityPromptService")
-    PPS.PromptTriggered:Connect(function(prompt, player)
-        if player == LocalPlayer then
-            addLog(string.format("[PROMPT TRIGGER] Object: %s | Action: %s", prompt.Parent and prompt.Parent:GetFullName() or "Unknown", prompt.ActionText), Color3.fromRGB(56, 189, 248))
+-- =========================================================================
+-- 5. CÁC NÚT ĐIỀU KHIỂN & TEST TRỰC TIẾP TRÊN MÀN HÌNH
+-- =========================================================================
+local function triggerBtn(btn)
+    if not btn then return false end
+    pcall(function()
+        if type(firesignal) == "function" then
+            if btn.Activated then firesignal(btn.Activated) end
+            if btn.MouseButton1Click then firesignal(btn.MouseButton1Click) end
+        end
+        if type(getconnections) == "function" then
+            if btn.Activated then
+                for _, c in ipairs(getconnections(btn.Activated) or {}) do
+                    if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                end
+            end
+            if btn.MouseButton1Click then
+                for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
+                    if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                end
+            end
         end
     end)
-end)
+    return true
+end
 
--- Tạo các nút bấm điều khiển
-createBtn("🚀 Tele Máy", 0, 95, Color3.fromRGB(16, 185, 129), function()
+-- Nút 1: Teleport tới Pad máy Combine
+createBtn("🚀 Tele Máy", 0, 80, Color3.fromRGB(16, 185, 129), function()
     pcall(function()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if hrp then
@@ -440,36 +345,104 @@ createBtn("🚀 Tele Máy", 0, 95, Color3.fromRGB(16, 185, 129), function()
     end)
 end)
 
-createBtn("📋 Copy Log", 100, 95, Color3.fromRGB(37, 99, 235), function()
-    if lastCapturedText ~= "" then
-        setclip(lastCapturedText)
-        StatusLabel.Text = "📋 Đã copy log mới nhất vào Clipboard!"
+-- Nút 2: Test tự động click tab Combine Egg (Kết hợp Trứng) bên trái
+createBtn("🎯 Chọn Tab", 85, 80, Color3.fromRGB(14, 165, 233), function()
+    pcall(function()
+        local found = false
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "KizHub_HalloweenSpy_Safe" then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc.Visible ~= false then
+                        local txt = (desc:IsA("TextLabel") or desc:IsA("TextButton")) and desc.Text:lower() or ""
+                        if txt:find("kết hợp trứng") or txt:find("combine egg") or txt:find("combineegg") then
+                            local b = desc:IsA("GuiButton") and desc or desc:FindFirstAncestorWhichIsA("GuiButton") or desc:FindFirstChildWhichIsA("GuiButton") or desc
+                            triggerBtn(b)
+                            found = true
+                            addLog("🎯 Đã kích hoạt click vào tab: " .. txt, Color3.fromRGB(56, 189, 248))
+                            StatusLabel.Text = "🎯 Đã click tab: " .. txt
+                        end
+                    end
+                end
+            end
+        end
+        if not found then
+            addLog("⚠️ Không tìm thấy nút tab Kết hợp Trứng trên màn hình!", Color3.fromRGB(251, 146, 60))
+        end
+    end)
+end)
+
+-- Nút 3: Test tự động click nút Chế tạo! (Craft!) bên phải
+createBtn("⚡ Test Craft", 170, 80, Color3.fromRGB(168, 85, 247), function()
+    pcall(function()
+        local found = false
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "KizHub_HalloweenSpy_Safe" then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if (desc:IsA("TextButton") or desc:IsA("ImageButton") or desc:IsA("TextLabel")) and desc.Visible ~= false then
+                        local txt = (desc:IsA("TextLabel") or desc:IsA("TextButton")) and desc.Text:lower() or ""
+                        local isCraft = (txt:find("chế tạo") or txt:find("craft")) and not txt:find("10") and not txt:find("3,000") and not txt:find("3000")
+                        if isCraft then
+                            local b = desc:IsA("GuiButton") and desc or desc:FindFirstAncestorWhichIsA("GuiButton") or desc:FindFirstChildWhichIsA("GuiButton") or desc
+                            triggerBtn(b)
+                            found = true
+                            addLog("⚡ Đã kích hoạt click nút Craft: " .. txt, Color3.fromRGB(192, 132, 252))
+                            StatusLabel.Text = "⚡ Đã click nút Craft: " .. txt
+                        end
+                    end
+                end
+            end
+        end
+        if not found then
+            addLog("⚠️ Không tìm thấy nút Chế tạo! trên màn hình!", Color3.fromRGB(251, 146, 60))
+        end
+    end)
+end)
+
+-- Nút 4: Copy Remote mới nhất
+createBtn("📋 Copy", 255, 65, Color3.fromRGB(37, 99, 235), function()
+    if lastCapturedCommand ~= "" then
+        setclip(lastCapturedCommand)
+        StatusLabel.Text = "📋 Đã copy lệnh Remote vào Clipboard!"
+        addLog("Đã copy vào Clipboard: " .. lastCapturedCommand, Color3.fromRGB(96, 165, 250))
     else
-        StatusLabel.Text = "⚠️ Chưa có log nào để copy!"
+        StatusLabel.Text = "⚠️ Chưa có lệnh Remote nào được bắt!"
     end
 end)
 
-createBtn("💾 Dump Data", 200, 110, Color3.fromRGB(147, 51, 234), function()
-    dumpHalloweenData()
-end)
-
-createBtn("🗑️ Xóa Log", 315, 65, Color3.fromRGB(75, 85, 99), function()
-    for _, child in ipairs(LogScroll:GetChildren()) do
-        if child:IsA("TextLabel") then child:Destroy() end
-    end
-    StatusLabel.Text = "📡 Trạng thái: Đang theo dõi..."
-end)
-
-createBtn("❌ Tắt UI Máy", 385, 71, Color3.fromRGB(225, 29, 72), function()
+-- Nút 5: Tắt UI máy
+createBtn("❌ Tắt UI", 325, 75, Color3.fromRGB(225, 29, 72), function()
     pcall(function()
         local Library = nil
-        pcall(function() Library = require(RS.Library) end)
+        pcall(function() Library = require(RS:WaitForChild("Library", 3)) end)
         if Library and Library.TabController and type(Library.TabController.CloseAll) == "function" then
             Library.TabController.CloseAll()
         end
+        -- Tìm nút đỏ X trong PlayerGui
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "KizHub_HalloweenSpy_Safe" then
+                for _, btn in ipairs(gui:GetDescendants()) do
+                    if (btn:IsA("TextButton") or btn:IsA("ImageButton")) and btn.Visible then
+                        local bName = btn.Name:lower()
+                        local bText = (btn:IsA("TextButton") and btn.Text:lower()) or ""
+                        if bName == "close" or bName == "x" or bText == "x" or bText == "✕" or bText == "×" then
+                            triggerBtn(btn)
+                        end
+                    end
+                end
+            end
+        end
     end)
-    StatusLabel.Text = "Đã gọi CloseAll UI máy"
+    StatusLabel.Text = "Đã tắt UI máy"
+    addLog("Đã gửi tín hiệu đóng toàn bộ UI máy", Color3.fromRGB(248, 113, 113))
 end)
 
-addLog("SẴN SÀNG! Ấn '🚀 Tele Máy' để tới ngay trước mặt máy Combine.", Color3.fromRGB(52, 211, 153))
-addLog("Sau đó dj tự tay click nút Craft bên trái, bảng sẽ bắt trọn Remote!", Color3.fromRGB(203, 213, 225))
+-- Nút 6: Xóa Log
+createBtn("🗑️ Xóa", 405, 55, Color3.fromRGB(71, 85, 105), function()
+    for _, child in ipairs(LogScroll:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
+    end
+    StatusLabel.Text = "📡 Đã xóa log. Sẵn sàng bắt tiếp..."
+end)
+
+addLog("SẴN SÀNG! Phiên bản Safe Spy không can thiệp game, không làm rỗng UI.", Color3.fromRGB(52, 211, 153))
+addLog("Bây giờ bạn có thể tới máy, mọi tương tác đều hiển thị bình thường!", Color3.fromRGB(224, 231, 255))
