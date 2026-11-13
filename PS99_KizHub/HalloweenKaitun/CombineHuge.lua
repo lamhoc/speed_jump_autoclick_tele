@@ -535,7 +535,7 @@ local function clickScreenScale(scaleX, scaleY)
     pcall(function()
         if VIM and type(VIM.SendMouseButtonEvent) == "function" then
             VIM:SendMouseButtonEvent(px, py, 0, true, game, 0)
-            task.wait(0.06)
+            task.wait(0.15) -- Giữ chuột 150ms để game Roblox nhận diện click đầy đủ
             VIM:SendMouseButtonEvent(px, py, 0, false, game, 0)
             clicked = true
         end
@@ -544,7 +544,7 @@ local function clickScreenScale(scaleX, scaleY)
         pcall(function()
             if type(mousemoveabs) == "function" then
                 mousemoveabs(px, py)
-                task.wait(0.02)
+                task.wait(0.05)
             end
             mouse1click()
             clicked = true
@@ -561,6 +561,7 @@ local function triggerGuiClick(btn)
             if btn.Activated then firesignal(btn.Activated) triggered = true end
             if btn.MouseButton1Click then firesignal(btn.MouseButton1Click) triggered = true end
             if btn.MouseButton1Down then firesignal(btn.MouseButton1Down) end
+            task.wait(0.08)
             if btn.MouseButton1Up then firesignal(btn.MouseButton1Up) end
         end
         if type(getconnections) == "function" then
@@ -609,9 +610,32 @@ local function findCombineMachineGui()
     return nil
 end
 
+-- Kiểm tra xem bảng bên phải có còn đang bị kẹt ở tab "Chim cánh cụt khổng lồ" không
+local function isPenguinTabStillActive()
+    local lp = Players.LocalPlayer
+    local pgui = lp and lp:FindFirstChildOfClass("PlayerGui")
+    if not pgui then return false end
+    for _, gui in ipairs(pgui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Enabled then
+            for _, desc in ipairs(gui:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Visible ~= false then
+                    local t = desc.Text:lower()
+                    -- Nửa bên phải (Position.X.Scale > 0.45) hiển thị tên recipe đang chọn
+                    if (t:find("chim cánh cụt") or t:find("gargantuan") or t:find("penguin")) and desc.Position.X.Scale > 0.45 then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- 1. BƯỚC 1 CỦA DJ: Bấm chọn mục "Kết hợp Trứng" (Combine Egg) ở danh sách bên trái
 local function selectCombineEggTab(machineGui)
-    -- Click tọa độ màn hình chuẩn do dj trích xuất: Scale (0.340, 0.463)
+    -- Click nhấp 2 lần cách nhau 0.3s để đảm bảo UI nhận diện
+    clickScreenScale(0.340, 0.463)
+    task.wait(0.3)
     clickScreenScale(0.340, 0.463)
 
     -- Fallback quét tìm nút GUI
@@ -766,7 +790,7 @@ function CombineHuge.checkAndRunCombine(state)
         local stand, mach = CombineHuge.combineMachineStand()
         if stand then
             Net.teleportTo(stand)
-            task.wait(0.6)
+            task.wait(0.8)
         end
 
         -- Kích hoạt tiếp cận máy, chạm Pad và ProximityPrompt
@@ -780,7 +804,7 @@ function CombineHuge.checkAndRunCombine(state)
                 local hrp = Net.hrp()
                 if pad and hrp and type(firetouchinterest) == "function" then
                     firetouchinterest(hrp, pad, 0)
-                    task.wait(0.05)
+                    task.wait(0.08)
                     firetouchinterest(hrp, pad, 1)
                 end
                 for _, prompt in ipairs(mach:GetDescendants()) do
@@ -792,7 +816,7 @@ function CombineHuge.checkAndRunCombine(state)
                 end
             end
         end)
-        task.wait(0.4)
+        task.wait(0.6)
 
         -- 4.1 Claim các mẻ đã ghép xong nếu có
         for _, claim in ipairs(readyClaims) do
@@ -800,23 +824,37 @@ function CombineHuge.checkAndRunCombine(state)
             local okC, resC = Net.netInvoke("HalloweenCraftingMachine_Claim", claim.UID)
             if okC and resC then
                 state.combineStatus = "Đã nhận mẻ ghép"
-                task.wait(0.5)
+                task.wait(0.6)
                 checkAndNotifyNewPets(preSnap)
             end
             task.wait(0.4)
         end
 
-        -- 4.2 Đợi UI máy mở lên và thực hiện 3 bước chuẩn theo yêu cầu của DJ:
-        task.wait(0.6)
+        -- 4.2 [QUAN TRỌNG]: Đợi UI máy nạp đầy đủ (chờ 1.2s cho UI ổn định)
+        task.wait(1.2)
         local machGui = findCombineMachineGui()
         if not machGui then
-            task.wait(0.4)
+            task.wait(0.6)
             machGui = findCombineMachineGui()
         end
 
         -- [BƯỚC 1 CỦA DJ]: Chọn mục "Kết hợp Trứng" (Combine Egg) ở danh sách bên trái (Scale 0.340, 0.463)
         selectCombineEggTab(machGui)
-        task.wait(0.5) -- Đợi 0.5s để UI chuyển tab và nạp công thức Combine Egg
+        task.wait(1.2) -- Đợi 1.2s để UI chuyển tab và hiển thị đúng công thức Combine Egg
+
+        -- Kiểm tra lại: Nếu bảng bên phải vẫn đang bị kẹt ở tab "Chim cánh cụt khổng lồ", thử click lại lần nữa
+        if isPenguinTabStillActive() then
+            print("[KizHub Combine] Tab Chim cánh cụt vẫn đang active, nhấp lại vào Kết hợp Trứng...")
+            selectCombineEggTab(machGui)
+            task.wait(1.0)
+        end
+
+        -- Nếu sau 2 lần vẫn còn kẹt ở tab Chim cánh cụt, TUYỆT ĐỐI KHÔNG CLICK CRAFT để tránh báo lỗi!
+        if isPenguinTabStillActive() then
+            warn("[KizHub Combine] Chưa chuyển sang tab Combine Egg thành công. Hủy lượt craft để tránh lỗi!")
+            closeMachineGui(machGui)
+            return
+        end
 
         -- Xác định targetIndex chuẩn cho Combine Egg (mặc định 2, bỏ qua công thức 1 Chim cánh cụt khổng lồ)
         local targetIndex = 2
@@ -844,9 +882,15 @@ function CombineHuge.checkAndRunCombine(state)
                 break -- Dừng ngay lập tức, tuyệt đối không click bừa
             end
 
+            -- Kiểm tra an toàn: Đảm bảo không bị lật về tab Chim cánh cụt
+            if isPenguinTabStillActive() then
+                warn("[KizHub Combine] Phát hiện tab bị lệch sang Chim cánh cụt. Dừng craft ngay!")
+                break
+            end
+
             local preSnap = snapshotPetInventory()
 
-            -- Click nút Chế tạo! tại Scale (0.534, 0.710)
+            -- Click nút Chế tạo! tại Scale (0.534, 0.710) với nhịp bấm chuẩn
             clickCraftButton(machGui)
 
             -- Đồng thời gọi Remote StartCraft 1 quả
@@ -856,14 +900,15 @@ function CombineHuge.checkAndRunCombine(state)
             end
 
             state.combineStatus = string.format("Đã ấn Craft 1 Combine Egg (%d Agony, %d Shard còn)", curProg.haveAgony - 10, curProg.haveShard - 300)
-            task.wait(0.8)
+            task.wait(1.5) -- Đợi 1.5s cho hiệu ứng ghép xong và nguyên liệu trong túi cập nhật
             checkAndNotifyNewPets(preSnap)
-            task.wait(0.5)
+            task.wait(0.8) -- Khoảng nghỉ 0.8s giữa các mẻ ghép
         end
 
         -- [BƯỚC 3 CỦA DJ]: Tắt UI máy (Bấm nút đỏ X góc trên bên phải Scale 0.765, 0.229 & TabController)
+        task.wait(0.5)
         closeMachineGui(machGui)
-        task.wait(0.4)
+        task.wait(0.6)
     end)
 
     if savedPos and state.alive then
