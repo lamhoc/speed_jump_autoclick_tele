@@ -264,12 +264,17 @@ function CombineHuge.getCombineProgress()
     if dir and type(recipes) == "table" and #recipes > 0 then
         local target = nil
         for _, r in ipairs(recipes) do
-            if r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg") then
+            local rName = (r.name or ""):lower()
+            if rName:find("combine") or rName:find("egg") or rName:find("trứng") then
                 target = r
                 break
             end
         end
-        if not target and #recipes > 0 then target = recipes[1] end
+        if not target and #recipes >= 2 then
+            target = recipes[2] -- Công thức 2 thường là Combine Egg
+        elseif not target and #recipes > 0 then
+            target = recipes[1]
+        end
 
         if target and target.recipe and type(target.recipe.Ingredients) == "table" then
             for _, ing in ipairs(target.recipe.Ingredients) do
@@ -512,81 +517,195 @@ local function checkAndNotifyNewPets(prevSnap)
 end
 
 -- =========================================================================
--- Trigger tương tác GUI nút Craft bên trái
+-- Bộ hàm tương tác GUI máy Combine-o-Matic theo đúng UI thực tế của game:
+-- 1. Bấm chọn mục "Kết hợp Trứng" (Combine Egg) ở danh sách bên trái
+-- 2. Bấm nút "Chế tạo!" (Craft!) ở góc dưới bên phải
+-- 3. Tắt UI (bấm nút đỏ "X" góc trên bên phải & TabController)
 -- =========================================================================
 local function triggerGuiClick(btn)
     if not btn then return false end
     local triggered = false
-    if type(firesignal) == "function" then
-        pcall(function() firesignal(btn.Activated) triggered = true end)
-        pcall(function() firesignal(btn.MouseButton1Click) triggered = true end)
-        pcall(function() firesignal(btn.MouseButton1Down) end)
-        pcall(function() firesignal(btn.MouseButton1Up) end)
-    end
-    if type(getconnections) == "function" then
-        pcall(function()
-            for _, c in ipairs(getconnections(btn.Activated) or {}) do
-                if c.Fire then c:Fire() elseif c.Function then c.Function() end
-                triggered = true
+    pcall(function()
+        if type(firesignal) == "function" then
+            if btn.Activated then firesignal(btn.Activated) triggered = true end
+            if btn.MouseButton1Click then firesignal(btn.MouseButton1Click) triggered = true end
+            if btn.MouseButton1Down then firesignal(btn.MouseButton1Down) end
+            if btn.MouseButton1Up then firesignal(btn.MouseButton1Up) end
+        end
+        if type(getconnections) == "function" then
+            if btn.Activated then
+                for _, c in ipairs(getconnections(btn.Activated) or {}) do
+                    if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                    triggered = true
+                end
             end
-            for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
-                if c.Fire then c:Fire() elseif c.Function then c.Function() end
-                triggered = true
+            if btn.MouseButton1Click then
+                for _, c in ipairs(getconnections(btn.MouseButton1Click) or {}) do
+                    if c.Fire then c:Fire() elseif c.Function then c.Function() end
+                    triggered = true
+                end
             end
-        end)
-    end
+        end
+    end)
     return triggered
 end
 
-local function clickCraftButtonOnLeft()
-    local clicked = false
-    pcall(function()
-        local lp = game:GetService("Players").LocalPlayer
-        local pgui = lp and lp:FindFirstChildOfClass("PlayerGui")
-        if not pgui then return end
+-- Tìm frame cửa sổ Combine-o-Matic trong PlayerGui
+local function findCombineMachineGui()
+    local lp = Players.LocalPlayer
+    local pgui = lp and lp:FindFirstChildOfClass("PlayerGui")
+    if not pgui then return nil end
 
-        for _, gui in ipairs(pgui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                local gName = gui.Name:lower()
-                if not gName:find("chat") and not gName:find("kizhub") and not gName:find("topbar") and not gName:find("roblox") then
-                    local candidateButtons = {}
-                    for _, desc in ipairs(gui:GetDescendants()) do
-                        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                            local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
-                            local bName = desc.Name:lower()
-                            
-                            local childText = ""
-                            for _, c in ipairs(desc:GetChildren()) do
-                                if c:IsA("TextLabel") and c.Visible then
-                                    childText = childText .. " " .. c.Text:lower()
-                                end
+    for _, gui in ipairs(pgui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Enabled then
+            local gName = gui.Name:lower()
+            if not gName:find("chat") and not gName:find("kizhub") and not gName:find("topbar") and not gName:find("roblox") then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("TextLabel") and desc.Visible ~= false then
+                        local txt = desc.Text:lower()
+                        if txt:find("combine-o-matic") or txt:find("chọn thú cưng") or txt:find("kết hợp trứng") or txt:find("combine egg") then
+                            local windowFrame = desc:FindFirstAncestorWhichIsA("Frame") or desc.Parent
+                            while windowFrame and windowFrame.Parent and windowFrame.Parent:IsA("Frame") and windowFrame.Parent.Size.X.Scale > 0.3 do
+                                windowFrame = windowFrame.Parent
                             end
-                            local fullText = bText .. " " .. childText
-                            
-                            -- Nút craft bên trái: Text/Name có "craft", "ghép", "chế", "make"
-                            -- Tuyệt đối BỎ QUA nút "10" / "open 10" / "craft 10" bên phải
-                            local is10 = fullText:find("10") or bName:find("10")
-                            local isCraft = fullText:find("craft") or bName:find("craft") or fullText:find("ghép") or fullText:find("chế") or bName:find("start") or fullText:find("mở")
-                            
-                            if isCraft and not is10 then
-                                table.insert(candidateButtons, { btn = desc, xPos = desc.AbsolutePosition.X })
-                            end
-                        end
-                    end
-
-                    -- Ưu tiên nút ở bên TRÁI (AbsolutePosition.X nhỏ hơn)
-                    if #candidateButtons > 0 then
-                        table.sort(candidateButtons, function(a, b) return a.xPos < b.xPos end)
-                        local leftCraftBtn = candidateButtons[1].btn
-                        if triggerGuiClick(leftCraftBtn) then
-                            clicked = true
+                            return windowFrame or gui
                         end
                     end
                 end
             end
         end
+    end
+    return nil
+end
+
+-- 1. BƯỚC 1 CỦA DJ: Bấm chọn mục "Kết hợp Trứng" (Combine Egg) ở danh sách bên trái
+local function selectCombineEggTab(machineGui)
+    local scope = machineGui or (Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui"))
+    if not scope then return false end
+
+    local candidates = {}
+    for _, desc in ipairs(scope:GetDescendants()) do
+        if desc.Visible ~= false then
+            local text = ""
+            if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                text = desc.Text:lower()
+            end
+
+            local isMatch = false
+            if text:find("kết hợp trứng") or text:find("combine egg") or text:find("combineegg") then
+                isMatch = true
+            elseif (text:find("trứng") or text:find("egg")) and (text:find("kết hợp") or text:find("combine")) then
+                isMatch = true
+            elseif (text:find("trứng") or text:find("egg")) and not text:find("chim cánh cụt") and not text:find("penguin") and not text:find("gargantuan") and not text:find("khổng lồ") then
+                isMatch = true
+            end
+
+            if isMatch then
+                local btn = desc:IsA("GuiButton") and desc or desc:FindFirstAncestorWhichIsA("GuiButton") or desc:FindFirstChildWhichIsA("GuiButton") or desc
+                table.insert(candidates, btn)
+            end
+        end
+    end
+
+    if #candidates > 0 then
+        for _, btn in ipairs(candidates) do
+            triggerGuiClick(btn)
+        end
+        return true
+    end
+    return false
+end
+
+-- 2. BƯỚC 2 CỦA DJ: Bấm nút "Chế tạo!" (Craft!) ở góc dưới bên phải
+local function clickCraftButton(machineGui)
+    local scope = machineGui or (Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui"))
+    if not scope then return false end
+
+    local craftButtons = {}
+    for _, desc in ipairs(scope:GetDescendants()) do
+        if (desc:IsA("TextButton") or desc:IsA("ImageButton") or desc:IsA("TextLabel")) and desc.Visible ~= false then
+            local text = (desc:IsA("TextLabel") or desc:IsA("TextButton")) and desc.Text:lower() or ""
+            local name = desc.Name:lower()
+
+            local childText = ""
+            for _, c in ipairs(desc:GetChildren()) do
+                if c:IsA("TextLabel") and c.Visible ~= false then
+                    childText = childText .. " " .. c.Text:lower()
+                end
+            end
+            local fullText = (text .. " " .. childText):gsub("%s+", " ")
+
+            local isCraft = fullText:find("chế tạo") or fullText:find("craft") or fullText:find("ghép") or name:find("craft") or name:find("make")
+            local is10 = fullText:find("10") or name:find("10")
+            local is3000 = fullText:find("3,000") or fullText:find("3000")
+
+            if isCraft and not is10 and not is3000 then
+                local btn = desc:IsA("GuiButton") and desc or desc:FindFirstAncestorWhichIsA("GuiButton") or desc:FindFirstChildWhichIsA("GuiButton") or desc
+                table.insert(craftButtons, btn)
+            end
+        end
+    end
+
+    if #craftButtons > 0 then
+        for _, btn in ipairs(craftButtons) do
+            triggerGuiClick(btn)
+        end
+        return true
+    end
+    return false
+end
+
+-- 3. BƯỚC 3 CỦA DJ: Tắt UI (Bấm nút đỏ "X" góc trên bên phải & TabController)
+local function closeMachineGui(machineGui)
+    local closed = false
+    pcall(function()
+        local scope = machineGui or (Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui"))
+        if not scope then return end
+
+        for _, desc in ipairs(scope:GetDescendants()) do
+            if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible ~= false then
+                local bName = desc.Name:lower()
+                local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                local isClose = (bName == "close" or bName == "closebutton" or bName == "x" or bName:find("exit") or bText == "x" or bText == "✕" or bText == "×")
+
+                if not isClose and desc:IsA("GuiObject") then
+                    local bg = desc.BackgroundColor3
+                    local isRedPink = (bg.R > 0.6 and bg.G < 0.4) or (bg.R > 0.7 and bg.B > 0.3)
+                    if isRedPink and desc.Position.X.Scale > 0.5 then
+                        isClose = true
+                    end
+                end
+
+                if isClose then
+                    triggerGuiClick(desc)
+                    closed = true
+                end
+            end
+        end
     end)
-    return clicked
+
+    pcall(function()
+        if G and G.TabController then
+            if type(G.TabController.CloseAll) == "function" then
+                pcall(G.TabController.CloseAll)
+            end
+            if type(G.TabController.Close) == "function" then
+                pcall(G.TabController.Close, "Combine-o-Matic")
+                pcall(G.TabController.Close, "HalloweenPetCraftingMachine")
+                pcall(G.TabController.Close, "HalloweenGamesCombine")
+                pcall(G.TabController.Close, "Machine")
+            end
+            if type(G.TabController.CloseTab) == "function" then
+                pcall(G.TabController.CloseTab)
+            end
+        end
+    end)
+
+    if machineGui and machineGui:IsA("GuiObject") then
+        pcall(function() machineGui.Visible = false end)
+    end
+
+    return closed
 end
 
 -- =========================================================================
@@ -660,7 +779,7 @@ function CombineHuge.checkAndRunCombine(state)
         end)
         task.wait(0.4)
 
-        -- 4.1 Claim các mẻ đã ghép xong
+        -- 4.1 Claim các mẻ đã ghép xong nếu có
         for _, claim in ipairs(readyClaims) do
             local preSnap = snapshotPetInventory()
             local okC, resC = Net.netInvoke("HalloweenCraftingMachine_Claim", claim.UID)
@@ -672,58 +791,64 @@ function CombineHuge.checkAndRunCombine(state)
             task.wait(0.4)
         end
 
-        -- 4.2 Tiến hành ghép: Nhấn nút Craft bên trái (Craft 1 quả mỗi lần thay vì Open 10)
-        local targetIndex = 1
+        -- 4.2 Đợi UI máy mở lên và thực hiện 3 bước chuẩn theo yêu cầu của DJ:
+        task.wait(0.6)
+        local machGui = findCombineMachineGui()
+        if not machGui then
+            task.wait(0.4)
+            machGui = findCombineMachineGui()
+        end
+
+        -- [BƯỚC 1]: Chọn mục "Kết hợp Trứng" (Combine Egg) ở danh sách bên trái
+        selectCombineEggTab(machGui)
+        task.wait(0.4) -- Đợi 0.4s để UI chuyển tab và hiển thị công thức Combine Egg
+
+        -- Xác định targetIndex chuẩn cho Combine Egg (mặc định 2, bỏ qua công thức 1 Chim cánh cụt khổng lồ)
+        local targetIndex = 2
         if type(recipes) == "table" and #recipes > 0 then
             for _, r in ipairs(recipes) do
-                if r.index == 1 or r.name:lower():find("combine") or r.name:lower():find("egg") then
+                local rName = (r.name or ""):lower()
+                if rName:find("combine") or rName:find("egg") or rName:find("trứng") then
                     targetIndex = r.index
                     break
                 end
             end
         end
 
+        -- [BƯỚC 2]: Vòng lặp ấn nút "Chế tạo!" (Craft!) cho đến khi hết nguyên liệu
         local maxCraftAttempts = 50
         while maxCraftAttempts > 0 and state.alive do
             maxCraftAttempts = maxCraftAttempts - 1
             local curProg = CombineHuge.getCombineProgress()
             if not (curProg and curProg.isReady) then
-                break -- Đã hết nguyên liệu
+                break -- Đã hết nguyên liệu (không đủ 10 Agony hoặc 300 Shard)
             end
 
             local preSnap = snapshotPetInventory()
-            local crafted = false
 
-            -- [YÊU CẦU CỦA DJ]: Ấn nút Craft bên trái (thay vì nút Open 10 bên phải)
-            clickCraftButtonOnLeft()
+            -- Click nút Chế tạo!
+            local clicked = clickCraftButton(machGui)
 
-            -- Gọi Remote StartCraft 1 (tuyệt đối KHÔNG truyền 10)
-            local okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dirId, targetIndex)
+            -- Gọi đồng thời Remote StartCraft 1 quả
+            local okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dirId, targetIndex, 1)
             if not okS or resS == false then
-                okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dirId, targetIndex, 1)
+                okS, resS = Net.netInvoke("HalloweenCraftingMachine_StartCraft", dirId, targetIndex)
             end
 
-            if (okS and (resS == true or type(resS) == "table")) or clickCraftButtonOnLeft() then
-                crafted = true
+            if clicked or (okS and (resS == true or type(resS) == "table")) then
                 state.combineStatus = string.format("Đã ấn Craft 1 Combine Egg (%d Agony, %d Shard còn lại)", math.max(0, curProg.haveAgony - 10), math.max(0, curProg.haveShard - 300))
+                task.wait(0.8)
+                checkAndNotifyNewPets(preSnap)
             else
                 state.combineStatus = "Ghép dừng: " .. tostring(resS)
                 break
             end
-
-            if crafted then
-                task.wait(0.8)
-                checkAndNotifyNewPets(preSnap)
-            end
-            task.wait(0.5)
+            task.wait(0.4)
         end
 
-        -- Đóng popup giao diện máy nếu có
-        pcall(function()
-            if G and G.TabController and type(G.TabController.CloseAll) == "function" then
-                G.TabController.CloseAll()
-            end
-        end)
+        -- [BƯỚC 3]: Tắt UI máy (Bấm nút đỏ X góc trên bên phải & TabController)
+        closeMachineGui(machGui)
+        task.wait(0.3)
     end)
 
     if savedPos and state.alive then
