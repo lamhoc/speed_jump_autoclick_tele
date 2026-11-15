@@ -408,7 +408,7 @@ function EggHatch.hatchBestEggTick(state)
             elseif btnInfo and btnInfo.name then
                 state.hatchStatus = string.format("Nút tới: %s • Đang tích coin (Đảo: %.1f%%)", btnInfo.name, percentVal)
             else
-                state.hatchStatus = string.format("Tích coin mua nút tiếp theo (%d/%d nút • %.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
+                state.hatchStatus = string.format("Nút kế (Đang quét...) • Tiến độ: %d/%d nút (%.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
             end
             return -- Ngưng mở trứng hoàn toàn để dành 100% coins cho TycoonFarm mua nút!
         end

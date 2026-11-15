@@ -24,6 +24,7 @@ local instanceModelFn = nil
 local IslandCmds = nil
 local PTButtons = nil
 local ButtonsCmds = nil
+local ClientPlot = nil
 local BreakableFrontend = nil
 local AutoFarmCmds = nil
 local PlayerPet = nil
@@ -138,6 +139,12 @@ end
 
 function TycoonFarm.getPlot()
     initGameLibs()
+    if ClientPlot and type(ClientPlot.GetByPlayer) == "function" then
+        local ok, plot = pcall(ClientPlot.GetByPlayer, LocalPlayer)
+        if ok and plot and not (type(plot.IsDestroyed) == "function" and plot:IsDestroyed()) then
+            return plot
+        end
+    end
     if IslandCmds and type(IslandCmds.Plot) == "function" then
         local ok, plot = pcall(IslandCmds.Plot)
         if ok and plot then return plot end
@@ -180,21 +187,13 @@ end
 
 function TycoonFarm.getPlotModel()
     local plot = TycoonFarm.getPlot()
-    if not plot then return nil end
-    if typeof(plot) == "Instance" and plot:IsA("Model") then
-        return plot
-    end
-    if typeof(plot) == "table" then
-        if typeof(plot.Model) == "Instance" and plot.Model:IsA("Model") then return plot.Model end
-        if typeof(plot._model) == "Instance" and plot._model:IsA("Model") then return plot._model end
-        if typeof(plot.instance) == "Instance" and plot.instance:IsA("Model") then return plot.instance end
-    end
-    local ok, model = pcall(function() return plot:GetModel() end)
-    if ok and model and typeof(model) == "Instance" and model:IsA("Model") then return model end
-
-    if instanceModelFn and type(instanceModelFn) == "function" then
-        local okM, m = pcall(instanceModelFn)
-        if okM and m and typeof(m) == "Instance" and m:IsA("Model") then return m end
+    if plot then
+        if type(plot.GetModel) == "function" then
+            local ok, m = pcall(plot.GetModel, plot)
+            if ok and m then return m end
+        elseif plot:IsA("Model") then
+            return plot
+        end
     end
 
     local things = workspace:FindFirstChild("__THINGS")
@@ -885,15 +884,15 @@ function TycoonFarm.getButtonsState()
     initGameLibs()
     local plot = TycoonFarm.getPlot()
     local buttonsState = {}
-    pcall(function()
-        if IslandCmds and type(IslandCmds.Get) == "function" then
-            buttonsState = IslandCmds.Get(nil, "Buttons") or {}
-        end
-    end)
+    if plot and type(plot.Save) == "function" then
+        pcall(function()
+            buttonsState = plot:Save("Buttons") or {}
+        end)
+    end
     if not buttonsState or not next(buttonsState) then
         pcall(function()
-            if plot and type(plot.Save) == "function" then
-                buttonsState = plot:Save("Buttons") or {}
+            if IslandCmds and type(IslandCmds.Get) == "function" then
+                buttonsState = IslandCmds.Get(nil, "Buttons") or {}
             end
         end)
     end
@@ -923,7 +922,7 @@ local function getBtnPrice(btn, priceMult)
     return tonumber(btn.Cost or btn.Price or btn.cost or btn.price or 0) or 0
 end
 
--- Quét toàn diện các nút có thể mua: Đa tầng fallback (PTButtons.Available -> PTButtons.Buttons -> Workspace Pads)
+-- Quét toàn diện các nút có thể mua: Chuẩn decompiled Pet Simulator 99 (PTButtons.Available zones = 5)
 function TycoonFarm.getAvailableButtons(buttonsState, priceMult)
     initGameLibs()
     buttonsState = buttonsState or TycoonFarm.getButtonsState()
@@ -931,12 +930,37 @@ function TycoonFarm.getAvailableButtons(buttonsState, priceMult)
 
     local avail = nil
 
-    -- 1. Thử qua ButtonsCmds Client Module
-    if ButtonsCmds then
+    -- 1. Chuẩn Decompiled Pet Simulator 99: PTButtons.Available(buttonsState, zones, part2, priceMult)
+    if PTButtons and type(PTButtons.Available) == "function" then
+        local zones = 5
+        local part2 = false
+        pcall(function() avail = PTButtons.Available(buttonsState, zones, part2, priceMult) end)
+        if not (type(avail) == "table" and #avail > 0) then
+            pcall(function() avail = PTButtons.Available(buttonsState, zones, part2) end)
+        end
+        if not (type(avail) == "table" and #avail > 0) then
+            pcall(function() avail = PTButtons.Available(buttonsState, zones) end)
+        end
+        if not (type(avail) == "table" and #avail > 0) then
+            for z = 5, 1, -1 do
+                pcall(function()
+                    local a = PTButtons.Available(buttonsState, z, false, priceMult)
+                    if type(a) == "table" and #a > 0 then avail = a end
+                end)
+                if type(avail) == "table" and #avail > 0 then break end
+            end
+        end
+        if not (type(avail) == "table" and #avail > 0) then
+            pcall(function() avail = PTButtons.Available(buttonsState) end)
+        end
+    end
+
+    -- 2. Thử qua ButtonsCmds client module
+    if not (type(avail) == "table" and #avail > 0) and ButtonsCmds then
         if type(ButtonsCmds.Available) == "function" then
             pcall(function() avail = ButtonsCmds.Available() end)
             if not (type(avail) == "table" and #avail > 0) then
-                pcall(function() avail = ButtonsCmds.Available(1) end)
+                pcall(function() avail = ButtonsCmds.Available(5) end)
             end
         end
         if not (type(avail) == "table" and #avail > 0) and type(ButtonsCmds.GetAvailable) == "function" then
@@ -944,105 +968,62 @@ function TycoonFarm.getAvailableButtons(buttonsState, priceMult)
         end
     end
 
-    -- 2. Thử qua PTButtons.Available với tất cả tổ hợp tham số (Đặc biệt là Island Index = 1)
-    if not (type(avail) == "table" and #avail > 0) and PTButtons and type(PTButtons.Available) == "function" then
-        -- Tổ hợp có Island ID 1 (Chuẩn Big Games Tycoon)
-        pcall(function() avail = PTButtons.Available(buttonsState, 1, 50, false, priceMult) end)
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 1, 50, false) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 1, 50) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 1) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 1, priceMult) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(1, buttonsState, 50, false, priceMult) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(1, buttonsState) end)
-        end
-
-        -- Tổ hợp không có Island ID
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 50, false, priceMult) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 50, false) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState, 50) end)
-        end
-        if not (type(avail) == "table" and #avail > 0) then
-            pcall(function() avail = PTButtons.Available(buttonsState) end)
-        end
-    end
-
     if type(avail) == "table" and #avail > 0 then
         return avail
     end
 
-    -- 3. Quét toàn bộ containers bảng định nghĩa trong PTButtons
+    -- 3. Fallback: Quét danh mục containers từ PTButtons
+    local unownedList = {}
+    local seenIds = {}
     local containers = {}
     if PTButtons then
         table.insert(containers, PTButtons)
-        if type(PTButtons.Buttons) == "table" then
-            table.insert(containers, PTButtons.Buttons)
-            if type(PTButtons.Buttons[1]) == "table" then
-                table.insert(containers, PTButtons.Buttons[1])
-            end
-        end
-        if type(PTButtons[1]) == "table" then
-            table.insert(containers, PTButtons[1])
-        end
-        if type(PTButtons.All) == "table" then
-            table.insert(containers, PTButtons.All)
-            if type(PTButtons.All[1]) == "table" then
-                table.insert(containers, PTButtons.All[1])
-            end
-        end
-        if type(PTButtons.List) == "table" then
-            table.insert(containers, PTButtons.List)
-        end
+        if type(PTButtons.Directory) == "table" then table.insert(containers, PTButtons.Directory) end
+        if type(PTButtons.Buttons) == "table" then table.insert(containers, PTButtons.Buttons) end
+        if type(PTButtons.All) == "table" then table.insert(containers, PTButtons.All) end
         if type(PTButtons.Islands) == "table" and type(PTButtons.Islands[1]) == "table" then
             table.insert(containers, PTButtons.Islands[1])
             if type(PTButtons.Islands[1].Buttons) == "table" then
                 table.insert(containers, PTButtons.Islands[1].Buttons)
             end
         end
-        if type(PTButtons.Directory) == "table" then
-            table.insert(containers, PTButtons.Directory)
-        end
     end
-
-    local seenIds = {}
-    local unownedList = {}
 
     for _, container in ipairs(containers) do
         for k, btn in pairs(container) do
             if type(btn) == "table" then
                 local bId = btn.Id or btn.id or btn.ButtonId or (type(k) == "string" and k)
-                if bId and type(bId) == "string" and not seenIds[bId] and bId ~= "Buttons" and bId ~= "All" and bId ~= "List" and bId ~= "Directory" then
+                if bId and type(bId) == "string" and not seenIds[bId] and bId ~= "Buttons" and bId ~= "All" and bId ~= "List" and bId ~= "Directory" and bId ~= "Islands" then
                     seenIds[bId] = true
 
                     local isOwned = (buttonsState[bId] == true or buttonsState[bId] == 1)
                     if not isOwned and PTButtons and type(PTButtons.Owned) == "function" then
                         local okO, resO = pcall(PTButtons.Owned, buttonsState, bId)
                         if okO and resO == true then isOwned = true end
-                        if not isOwned then
-                            local okO2, resO2 = pcall(PTButtons.Owned, buttonsState, 1, bId)
-                            if okO2 and resO2 == true then isOwned = true end
-                        end
                     end
 
                     if not isOwned then
-                        local bCopy = table.clone and table.clone(btn) or btn
-                        bCopy.Id = bId
-                        table.insert(unownedList, bCopy)
+                        local depsMet = true
+                        local deps = btn.Dependencies or btn.Depends or btn.Prerequisites or btn.Requirements
+                        if type(deps) == "table" then
+                            for _, depId in ipairs(deps) do
+                                local depOwned = (buttonsState[depId] == true or buttonsState[depId] == 1)
+                                if not depOwned and PTButtons and type(PTButtons.Owned) == "function" then
+                                    local okD, resD = pcall(PTButtons.Owned, buttonsState, depId)
+                                    if okD and resD == true then depOwned = true end
+                                end
+                                if not depOwned then
+                                    depsMet = false
+                                    break
+                                end
+                            end
+                        end
+
+                        if depsMet then
+                            local bCopy = table.clone and table.clone(btn) or btn
+                            bCopy.Id = bId
+                            table.insert(unownedList, bCopy)
+                        end
                     end
                 end
             end
@@ -1082,7 +1063,7 @@ function TycoonFarm.getAvailableButtons(buttonsState, priceMult)
     return unownedList
 end
 
--- Xác định nút mục tiêu tiếp theo để phân bổ ngân sách với việc mở trứng
+-- Xác định nút mục tiêu tiếp theo để phân bổ ngân sách
 function TycoonFarm.getNextTargetButton(priceMult)
     initGameLibs()
     priceMult = priceMult or (ButtonsCmds and type(ButtonsCmds.PriceMult) == "function" and ButtonsCmds.PriceMult()) or 1
@@ -1093,16 +1074,16 @@ function TycoonFarm.getNextTargetButton(priceMult)
         return nil
     end
 
-    -- 1. ƯU TIÊN CAO NHẤT: Nút mở Trứng (Egg) hoặc Nút mở Khu vực (Zone)
+    -- 1. Ưu tiên nút Critical / Milestone (Egg, Zone, Path, Pedestal, Machine, IslandLuck)
     for _, btn in ipairs(avail) do
         local id = tostring(btn.Id or "")
-        if id:find("Egg") or id:find("Zone") or btn.Egg then
+        if id:find("Egg") or id:find("Zone") or id:find("Machine") or id:find("Pedestal") or id:find("IslandLuck") or btn.Egg then
             local price = getBtnPrice(btn, priceMult)
             return btn, price, true -- isMilestone = true
         end
     end
 
-    -- 2. Nếu không có nút Egg/Zone: Chọn nút rẻ nhất hiện có để đẩy nhanh tiến độ
+    -- 2. Nếu không có nút Milestone: Chọn nút rẻ nhất hiện có
     local cheapestBtn = avail[1]
     local minPrice = getBtnPrice(cheapestBtn, priceMult)
     if minPrice == 0 then minPrice = math.huge end
@@ -1163,13 +1144,46 @@ function TycoonFarm.getNextButtonInfo()
         end
     end
 
+    -- Fallback đảm bảo không bao giờ nil nếu đảo chưa xong (owned < total)
+    if not btn then
+        local prog = TycoonFarm.getTycoonProgress()
+        if prog and (prog.ownedButtons or 0) < (prog.totalButtons or 0) then
+            local buttonsState = TycoonFarm.getButtonsState()
+            local plotModel = TycoonFarm.getPlotModel()
+            if PTButtons and type(PTButtons.Directory) == "table" then
+                for bId, bData in pairs(PTButtons.Directory) do
+                    if type(bData) == "table" and not buttonsState[bId] then
+                        btn = bData
+                        btn.Id = bId
+                        price = getBtnPrice(btn, priceMult)
+                        break
+                    end
+                end
+            end
+            if not btn and plotModel then
+                for _, desc in ipairs(plotModel:GetDescendants()) do
+                    local bId = desc:GetAttribute("ButtonId") or desc:GetAttribute("Id")
+                    if bId and not buttonsState[bId] then
+                        btn = {
+                            Id = tostring(bId),
+                            Name = tostring(bId):gsub("_", " "),
+                            Cost = tonumber(desc:GetAttribute("Cost") or desc:GetAttribute("Price")) or 0,
+                        }
+                        price = btn.Cost
+                        break
+                    end
+                end
+            end
+        end
+    end
+
     if not btn then return nil end
 
     local coins = Network.currency(K.CURRENCY) or 0
     price = tonumber(price) or 0
     local missing = math.max(0, price - coins)
 
-    local rawName = tostring(btn.Name or btn.DisplayName or btn.Title or btn.Id or "Nút")
+    local rawName = tostring(btn.Display or btn.DisplayName or btn.Title or btn.Name or btn.Id or "Nút")
     local btnName = rawName
     if btnName == btn.Id and btnName:find("_") then
         btnName = btnName:gsub("_", " ")
@@ -1186,7 +1200,7 @@ function TycoonFarm.getNextButtonInfo()
     }
 end
 
--- Hàm thực thi mua nút 4 tầng (Client Cmd -> Server Verb -> Network Remote -> Physical Pad Touch), triệt tiêu 100% bug không mua nút
+-- Hàm thực thi mua nút 4 tầng (Server Verb -> Client Cmd -> Remote -> Physical Pad Touch)
 function TycoonFarm.buyButton(btn, price)
     if not btn then return false end
     local btnId = btn.Id or btn.id or (type(btn) == "string" and btn)
@@ -1194,9 +1208,31 @@ function TycoonFarm.buyButton(btn, price)
 
     initGameLibs()
     local bought = false
+    local plot = TycoonFarm.getPlot()
+    local plotModel = TycoonFarm.getPlotModel()
 
-    -- Tầng 1: Thử qua ButtonsCmds client module
-    if ButtonsCmds then
+    -- Tầng 1: plot:Invoke("NZ_Commit", btnId) (Chuẩn Decompiled Big Games ClientPlot Remote)
+    if plot and type(plot.Invoke) == "function" then
+        local ok, res = pcall(function()
+            return plot:Invoke("NZ_Commit", btnId)
+        end)
+        if ok and (res == true or (res ~= nil and res ~= false and res ~= 0)) then
+            bought = true
+        end
+        if not bought then
+            local verbsToTry = { "BuyButton", "PurchaseButton", "Buy" }
+            for _, vName in ipairs(verbsToTry) do
+                local ok2, res2 = pcall(function() return plot:Invoke(vName, btnId) end)
+                if ok2 and (res2 == true or (res2 ~= nil and res2 ~= false and res2 ~= 0)) then
+                    bought = true
+                    break
+                end
+            end
+        end
+    end
+
+    -- Tầng 2: ButtonsCmds Client Module
+    if not bought and ButtonsCmds then
         if type(ButtonsCmds.Buy) == "function" then
             local ok, res = pcall(ButtonsCmds.Buy, btnId)
             if ok and (res == true or (res ~= nil and res ~= false)) then bought = true end
@@ -1213,24 +1249,7 @@ function TycoonFarm.buyButton(btn, price)
         end
     end
 
-    local plot = TycoonFarm.getPlot()
-    local plotModel = TycoonFarm.getPlotModel()
-
-    -- Tầng 2: Thử qua plot:Invoke với các verbs khác nhau (nếu plot có method Invoke)
-    if not bought and plot and type(plot.Invoke) == "function" then
-        pcall(function()
-            local verbsToTry = { K.VERBS.BuyButton or "NZ_Commit", "BuyButton", "PurchaseButton", "Buy" }
-            for _, vName in ipairs(verbsToTry) do
-                local ok, res = pcall(function() return plot:Invoke(vName, btnId) end)
-                if ok and (res == true or res == nil or (res ~= false and res ~= 0)) then
-                    bought = true
-                    break
-                end
-            end
-        end)
-    end
-
-    -- Tầng 3: Thử qua Network Remote Invoke / Fire
+    -- Tầng 3: Network Remote Invoke / Fire
     if not bought then
         pcall(function()
             Network.netInvoke("PumpkinTycoon: Buy Button", btnId)
@@ -1240,7 +1259,7 @@ function TycoonFarm.buyButton(btn, price)
         end)
     end
 
-    -- Tầng 4: Dự phòng cấp cao: Dịch chuyển nhân vật đạp trực tiếp lên bệ nút (Physical Pad Touch)
+    -- Tầng 4: Physical Pad Touch: Dịch chuyển nhân vật đạp trực tiếp lên bệ nút
     pcall(function()
         local char, hrp = getCharacterParts()
         if not hrp then return end
@@ -1248,6 +1267,9 @@ function TycoonFarm.buyButton(btn, price)
         local padSpot = nil
         if PTButtons and type(PTButtons.PadSpot) == "function" and plotModel then
             pcall(function() padSpot = PTButtons.PadSpot(plotModel, btn) end)
+            if not padSpot then
+                pcall(function() padSpot = PTButtons.PadSpot(plotModel, 5, btn) end)
+            end
             if not padSpot then
                 pcall(function() padSpot = PTButtons.PadSpot(plotModel, 1, btn) end)
             end
@@ -1271,51 +1293,23 @@ function TycoonFarm.buyButton(btn, price)
                 padPos = padSpot.Position
             elseif typeof(padSpot) == "Vector3" then
                 padPos = padSpot
-            elseif typeof(padSpot) == "Instance" then
-                padPos = padSpot:GetPivot().Position
+            elseif typeof(padSpot) == "Instance" and padSpot:IsA("BasePart") then
+                padPos = padSpot.Position
             end
 
             if padPos then
-                local touchPart = (typeof(padSpot) == "Instance" and padSpot:IsA("BasePart") and padSpot)
-                    or (pad and (pad:FindFirstChild("Touch", true) or pad:FindFirstChild("Press", true) or pad:FindFirstChild("Base", true) or (pad:IsA("BasePart") and pad)))
-                    or hrp
-
-                -- Teleport lên bệ nút
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.AssemblyAngularVelocity = Vector3.zero
-                char:PivotTo(CFrame.new(padPos + Vector3.new(0, 2, 0)))
+                local prevCFrame = hrp.CFrame
+                hrp.CFrame = CFrame.new(padPos + Vector3.new(0, 1.5, 0))
                 task.wait(0.15)
-
-                if typeof(firetouchinterest) == "function" and touchPart and touchPart ~= hrp then
-                    firetouchinterest(hrp, touchPart, 0)
-                    task.wait(0.05)
-                    firetouchinterest(hrp, touchPart, 1)
-                end
-
-                -- Gọi lại Remote khi đang đứng trên bệ
                 if plot and type(plot.Invoke) == "function" then
-                    pcall(function()
-                        plot:Invoke(K.VERBS.BuyButton or "NZ_Commit", btnId)
-                    end)
+                    pcall(function() plot:Invoke("NZ_Commit", btnId) end)
                 end
-                bought = true
-
                 task.wait(0.1)
-                -- Teleport về lại bãi farm
-                local sweetPos = TycoonFarm.getSweetPos()
-                if sweetPos then
-                    TycoonFarm.moveTo(sweetPos)
-                end
+                hrp.CFrame = prevCFrame
+                bought = true
             end
         end
     end)
-
-    if bought then
-        print(string.format("[KizHub Tycoon] 👑 ĐÃ MUA THÀNH CÔNG NÚT: %s (Giá: %s Coins)", tostring(btnId), Network.shorten(price or 0)))
-        if Modules and Modules.EggHatch and type(Modules.EggHatch.onButtonBought) == "function" then
-            Modules.EggHatch.onButtonBought(btnId)
-        end
-    end
 
     return bought
 end
@@ -1327,45 +1321,96 @@ function TycoonFarm.checkAndBuyButtons(state)
     local buttonsState = TycoonFarm.getButtonsState()
     local priceMult = (ButtonsCmds and type(ButtonsCmds.PriceMult) == "function" and ButtonsCmds.PriceMult()) or 1
 
-    -- 1. Kiểm tra nhận thưởng hoàn thành đảo (Island Completion Reward)
-    if Config.AutoClaimIslandReward and PTButtons and type(PTButtons.Progress) == "function" and type(PTButtons.Completed) == "function" then
-        local _, _, frac = PTButtons.Progress(buttonsState, 1)
-        if frac >= 1 and not PTButtons.Completed(buttonsState) then
-            pcall(function()
-                if plot then plot:Invoke(K.VERBS.ClaimReward) end
-                print("[KizHub Tycoon] 🎉 ĐÃ NHẬN THƯỞNG HOÀN THÀNH ĐẢO PUMPKIN TYCOON!")
-            end)
+    -- 1. Kiểm tra nhận thưởng hoàn thành đảo (100% Island Completion Reward)
+    local prog = TycoonFarm.getTycoonProgress()
+    local isDone = (prog.percent or 0) >= 1 or ((prog.totalButtons or 0) > 0 and (prog.ownedButtons or 0) >= (prog.totalButtons or 0))
+    if Config.AutoClaimIslandReward and isDone and not prog.completed then
+        local claimed = false
+        if plot and type(plot.Invoke) == "function" then
+            local ok, res = pcall(function() return plot:Invoke(K.VERBS.ClaimReward or "BT_Settle") end)
+            if ok and res ~= false then claimed = true end
+        end
+        if not claimed then
+            local plotModel = TycoonFarm.getPlotModel()
+            local char, hrp = getCharacterParts()
+            if plotModel and hrp then
+                local rewardObj = plotModel:FindFirstChild("CompletionReward", true) or plotModel:FindFirstChild("CompletionReward_Look", true)
+                local pressPart = rewardObj and (rewardObj:FindFirstChild("Press", true) or rewardObj:FindFirstChild("Touch", true) or rewardObj.PrimaryPart or (rewardObj:IsA("BasePart") and rewardObj))
+                if pressPart then
+                    local prevCFrame = hrp.CFrame
+                    hrp.CFrame = CFrame.new(pressPart.Position + Vector3.new(0, 1.5, 0))
+                    task.wait(0.2)
+                    if plot and type(plot.Invoke) == "function" then
+                        pcall(function() plot:Invoke(K.VERBS.ClaimReward or "BT_Settle") end)
+                    end
+                    task.wait(0.1)
+                    hrp.CFrame = prevCFrame
+                    claimed = true
+                end
+            end
+        end
+        if claimed then
+            print("[KizHub Tycoon] 🎉 ĐÃ NHẬN THƯỞNG HOÀN THÀNH ĐẢO PUMPKIN TYCOON (20x Flannel Gift)!")
         end
     end
 
     local coins = Network.currency(K.CURRENCY) or 0
+    if coins <= 0 then return end
 
-    -- 2. ƯU TIÊN MUA NÚT MỐC QUAN TRỌNG (Egg / Zone button) NGAY KHI ĐỦ COIN
-    local targetBtn, targetPrice, isMilestone = TycoonFarm.getNextTargetButton(priceMult)
-    if targetBtn and isMilestone and coins >= targetPrice then
-        local ok = TycoonFarm.buyButton(targetBtn, targetPrice)
-        if ok then
-            task.wait(0.3)
-            return
+    -- 2. Quét toàn bộ nút có sẵn và mua liên tục (Burst Buy) các nút đủ tiền
+    local avail = TycoonFarm.getAvailableButtons(buttonsState, priceMult)
+    if not (type(avail) == "table" and #avail > 0) then return end
+
+    local hasRank1 = false
+    local minRank1Price = math.huge
+    local candidates = {}
+
+    for _, btn in ipairs(avail) do
+        local id = tostring(btn.Id or "")
+        local rank = 3
+        if id:find("Egg") or id:find("Zone") or id:find("Machine") or id:find("Pedestal") or id:find("IslandLuck") or btn.Egg then
+            rank = 1
+        elseif id == "Merchant" then
+            rank = 2
+        end
+
+        local price = getBtnPrice(btn, priceMult)
+        if rank == 1 then
+            hasRank1 = true
+            if price < minRank1Price then minRank1Price = price end
+        end
+        if price <= coins then
+            table.insert(candidates, { btn = btn, price = price, rank = rank })
         end
     end
 
-    -- 3. Mua các nút có sẵn theo thứ tự Rẻ nhất trước (Cheapest First)
-    local avail = TycoonFarm.getAvailableButtons(buttonsState, priceMult)
-    if type(avail) == "table" and #avail > 0 then
-        for _, btn in ipairs(avail) do
-            local price = (PTButtons and type(PTButtons.Price) == "function" and PTButtons.Price(btn, priceMult)) or btn.Cost or btn.Price or 0
-            if coins >= price then
-                local ok = TycoonFarm.buyButton(btn, price)
-                if ok then
-                    task.wait(0.2)
-                    break
-                end
+    local affordable = {}
+    for _, item in ipairs(candidates) do
+        if item.rank == 1 or not hasRank1 or item.price <= math.max(minRank1Price * 0.25, coins * 0.35) then
+            table.insert(affordable, item)
+        end
+    end
+
+    if #affordable == 0 then return end
+
+    table.sort(affordable, function(a, b)
+        if a.rank ~= b.rank then return a.rank < b.rank end
+        return a.price < b.price
+    end)
+
+    local boughtCount = 0
+    for _, item in ipairs(affordable) do
+        if coins >= item.price then
+            local ok = TycoonFarm.buyButton(item.btn, item.price)
+            if ok then
+                coins = math.max(0, coins - item.price)
+                boughtCount = boughtCount + 1
+                task.wait(0.15)
+                if boughtCount >= 10 then break end
             end
         end
     end
 end
-
 -- =========================================================================
 -- 7. AUTO-TAP VÀ HÚT ORBS / LOOTBAGS
 -- =========================================================================
