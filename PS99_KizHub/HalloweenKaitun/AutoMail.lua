@@ -29,7 +29,7 @@ local FailedUIDBlacklist = {}
 local nextMailAttemptAt = 0
 
 local MailSettings = {
-    Recipient        = "Kizmoii_VNG",
+    Recipient        = "",
     StartupWaitSec   = 10,
     MailCooldownSec  = 10,
     RetryIntervalSec = 1800, -- 30 phút nếu hòm thư đầy hoặc thiếu gems
