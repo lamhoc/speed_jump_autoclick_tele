@@ -52,25 +52,41 @@ local DEFAULT_CONFIG = {
     FarmLoopInterval = 0.10,        -- Pet & movement target refresh interval
     OrbSweepInterval = 0.10,
 
-    -- Keep / Lock / Stock / Merchant (A2)
-    KeepRung = 5,                   -- Ladder: 2=Rare, 3=Epic, 4=Legendary, 5=Mythical, 6=Exotic, 7=Divine, 8=Secret, 0=Off
-    LockMinRung = 5,                -- Auto-lock pedestals holding >= LockMinRung
-    MinFarmPedestals = nil,         -- nil = adaptive (1 when < 5 unlocked, 2 when >= 5 unlocked); or set integer >= 1
-    AutoLockUpgradeSwap = true,     -- Unlock weakest locked pedestal when a higher-rung pumpkin can take its slot
-    AutoPlaceStock = true,          -- Enable auto-place ("next") + allocate held stock onto free pedestals
-    AutoBuyMerchant = true,         -- Activate Merchant buying once Coins >= MerchantActivateCoins
-    MerchantRequireButtonsComplete = true,
-    MerchantActivateCoins = 100000000, -- Start buying Merchant bands at >= 100M Patch Coins
-    MerchantMinSpareCoins = 50000000,  -- Keep at least 50M Patch Coins spare after a Merchant purchase
-    KeepServerAutoMerchantOff = true, -- Prevent server HM_Sustain from buying low tiers into stock slots
-    MerchantBandOrder = { "ExoticPlus", "MythicalPlus", "LegendaryPlus" },
+    -- Keep / Lock / Stock / Merchant (A2: Mua TẤT CẢ Pumpkin & ĐẬP HẾT)
+    BreakAllPumpkins = true,         -- Mua tất cả các loại bí ngô và ĐẬP SẠCH (không khóa giữ bí)
+    KeepRung = 0,                   -- 0 = Không giữ quả nào, cho phép đập sạch
+    LockMinRung = 99,               -- Không khóa bất kỳ quả bí nào
+    MinFarmPedestals = 8,           -- Toàn bộ 8 bệ thờ đều ưu tiên đập bí
+    AutoLockUpgradeSwap = false,
+    AutoPlaceStock = true,          -- Đặt bí ngô mua từ merchant lên bệ thờ ngay lập tức để đập
+    AutoBuyMerchant = true,
+    MerchantRequireButtonsComplete = false,
+    MerchantActivateCoins = 100000, -- Có 100k Coins là mua ngay
+    MerchantMinSpareCoins = 50000,  -- Giữ 50k Coins dự phòng
+    KeepServerAutoMerchantOff = true,
+    MerchantBandOrder = { "ExoticPlus", "MythicalPlus", "LegendaryPlus", "EpicPlus", "RarePlus" },
     AllowedMerchantBands = {
         ExoticPlus = true,
         MythicalPlus = true,
         LegendaryPlus = true,
-        EpicPlus = false,
-        RarePlus = false,
+        EpicPlus = true,
+        RarePlus = true,
     },
+
+    -- Free Gifts (12 Mốc Quà Miễn Phí Tích Lũy Gems)
+    AutoClaimFreeGifts = true,
+
+    -- Auto Buffs Phụ Trợ (Trái Cây, Potions, Đồ Chơi - TUYỆT ĐỐI KHÔNG CẮM CỜ)
+    AutoBuffs = {
+        Enabled = true,
+        Fruits = true,
+        Potions = true,
+        Toys = true,
+        NoFlags = true,
+    },
+
+    -- Bảng GUI Mini (Siêu nhẹ cho 80 acc)
+    ShowGui = true,
 
     -- Upgrades with PumpkinTokens (A3)
     AutoUpgrades = true,
@@ -141,10 +157,10 @@ local DEFAULT_CONFIG = {
 
     -- Map & Render Optimization
     OptimizeMap = false,                 -- Master toggle for world cleanup + visual hiding + lighting/FX reduction
-    StripWorldClutter = true,           -- Destroy unused world maps/props (PSX Portal, Border, Ornaments, unused Instances, __DEBRIS)
-    HideIslandVisuals = true,           -- Make PumpkinTycoonIslands, __THINGS.Plots, Pads, Pumpkins invisible + strip decals/FX
-    HideEntityVisuals = true,           -- Make Breakables, CustomEggs, Pets, Orbs & other players invisible (keeps hitboxes/data)
-    OptimizeLightingAndEffects = true,  -- Disable Shadows/Sky/Bloom/Atmosphere/PostEffects/Particles and Terrain decoration
+    StripWorldClutter = false,           -- Destroy unused world maps/props (PSX Portal, Border, Ornaments, unused Instances, __DEBRIS)
+    HideIslandVisuals = false,           -- Make PumpkinTycoonIslands, __THINGS.Plots, Pads, Pumpkins invisible + strip decals/FX
+    HideEntityVisuals = false,           -- Make Breakables, CustomEggs, Pets, Orbs & other players invisible (keeps hitboxes/data)
+    OptimizeLightingAndEffects = false,  -- Disable Shadows/Sky/Bloom/Atmosphere/PostEffects/Particles and Terrain decoration
     SafeFloorEnabled = true,            -- Maintain invisible backup Baseplate under own plot to prevent void falls
     OptimizeScanInterval = 2.0,         -- Seconds between low-cost sweeps for newly streamed islands/players
 
@@ -1922,6 +1938,18 @@ local function StepKeepLockAndStock(plot, buttons, part1Complete)
     local maxKeepSlots = math.max(0, pedInfo.unlockedCount - minFarm)
     local lockedList = pedInfo.lockedList
 
+    -- Nếu BreakAllPumpkins bật: Mở khóa TOÀN BỘ bệ thờ để dàn Pet và Player đập sạch
+    if Config.BreakAllPumpkins then
+        for _, l in ipairs(pedInfo.lockedList) do
+            pcall(function()
+                plot:Invoke(NET.SetLock, l.index, false)
+            end)
+            task.wait(0.02)
+        end
+        pedInfo.lockedList = {}
+        lockedList = {}
+    end
+
     -- 1. Enforce MinFarmPedestals invariant (never lock more pedestals than maxKeepSlots)
     while #lockedList > maxKeepSlots do
         local weakest = table.remove(lockedList, 1)
@@ -1943,6 +1971,7 @@ local function StepKeepLockAndStock(plot, buttons, part1Complete)
     end)
 
     for _, cand in ipairs(candidates) do
+        if Config.BreakAllPumpkins then break end
         if #lockedList < maxKeepSlots then
             local ok, res = pcall(function()
                 return plot:Invoke(NET.SetLock, cand.index, true)
@@ -2214,11 +2243,9 @@ local function CollectMyBreakables(plot, pedInfo)
             if isBonus and Config.FarmOrchardAndHay then
                 valid = true
             elseif type(pedIdx) == "number" then
-                if not lockedPedestals[pedIdx] then
+                if Config.BreakAllPumpkins or not lockedPedestals[pedIdx] then
                     eligibleFallback = true
-                    if not IsProtectedForLockQueue(pedInfo, maxKeepSlots, rung) then
-                        valid = true
-                    end
+                    valid = true
                 end
             else
                 -- Normal zone breakables (coins, crates, presents, safes) on our island/zone
@@ -2238,7 +2265,7 @@ local function CollectMyBreakables(plot, pedInfo)
                 if isBonus then
                     score = 1000000 - (dist * 0.25)
                 elseif type(pedIdx) == "number" then
-                    score = 50000 + (rung * 500) - (dist * 0.25)
+                    score = (Config.BreakAllPumpkins and 200000 or 50000) + (rung * 1000) - (dist * 0.25)
                 else
                     -- Highest unlocked Zone dominates distance penalty across the whole island
                     score = 5000 + (zoneNum * 2000) - (dist * 0.25)
@@ -2649,6 +2676,10 @@ local function StepButtonsAndComplete(plot)
         local hasRank1 = false
         local minRank1Price = math.huge
         local candidates = {}
+        local bestNextBtn = nil
+        local bestNextPrice = math.huge
+        local bestNextRank = math.huge
+
         for _, btn in ipairs(avail) do
             local rank = GetButtonPriorityRank(btn)
             local price = Modules.PumpkinButtonsUtil.Price(btn, priceMult)
@@ -2658,10 +2689,30 @@ local function StepButtonsAndComplete(plot)
                     minRank1Price = price
                 end
             end
+            if rank < bestNextRank or (rank == bestNextRank and price < bestNextPrice) then
+                bestNextRank = rank
+                bestNextPrice = price
+                bestNextBtn = btn
+            end
             if price <= spendableCoins then
                 table.insert(candidates, { btn = btn, price = price, rank = rank })
             end
         end
+
+        if bestNextBtn then
+            Runtime.Stats.NextButtonName = tostring(bestNextBtn.Display or bestNextBtn.Id or "N/A")
+            Runtime.Stats.NextButtonCost = bestNextPrice
+            Runtime.Stats.MissingCoins = math.max(0, bestNextPrice - spendableCoins)
+        elseif part1Complete then
+            Runtime.Stats.NextButtonName = "Đã xong tất cả"
+            Runtime.Stats.NextButtonCost = 0
+            Runtime.Stats.MissingCoins = 0
+        else
+            Runtime.Stats.NextButtonName = "Chờ mở khóa"
+            Runtime.Stats.NextButtonCost = 0
+            Runtime.Stats.MissingCoins = 0
+        end
+
         local affordable = {}
         for _, item in ipairs(candidates) do
             -- Save coins for the next critical-path button instead of draining budget on cosmetic leaves
@@ -4524,6 +4575,266 @@ local function StepAutoMail()
     end
 end
 
+
+-- ============================================================================
+-- 12C. FREE GIFTS, AUTO BUFFS (FRUITS/POTIONS/TOYS) & MINI GUI (KIZHUB SUITE)
+-- ============================================================================
+
+-- 1. Tự động nhận 12 mốc quà Free Gifts định kỳ (tích lũy Gems trả cước AutoMail)
+local lastFreeGiftCheck = 0
+local function StepFreeGifts()
+    if not Config.AutoClaimFreeGifts or not Modules.Network then return end
+    local now = os.clock()
+    if now - lastFreeGiftCheck < 90 then return end
+    lastFreeGiftCheck = now
+
+    pcall(function()
+        local RS = game:GetService("ReplicatedStorage")
+        local FreeGiftsCmds = Modules.FreeGiftsCmds
+        if not FreeGiftsCmds then
+            pcall(function()
+                FreeGiftsCmds = require(RS.Library.Client.FreeGiftsCmds)
+                Modules.FreeGiftsCmds = FreeGiftsCmds
+            end)
+        end
+
+        for i = 1, 12 do
+            local claimed = false
+            if FreeGiftsCmds and type(FreeGiftsCmds.Claim) == "function" then
+                local ok, res = pcall(FreeGiftsCmds.Claim, i)
+                if ok and res == true then claimed = true end
+            end
+            if not claimed then
+                local okInv, resInv = pcall(Modules.Network.Invoke, "Redeem Free Gift", i)
+                if okInv and resInv == true then claimed = true end
+            end
+            if not claimed then
+                local r = RS:FindFirstChild("Network") and RS.Network:FindFirstChild("Redeem Free Gift")
+                if r then
+                    if r:IsA("RemoteFunction") then pcall(function() r:InvokeServer(i) end)
+                    elseif r:IsA("RemoteEvent") then pcall(function() r:FireServer(i) end) end
+                end
+            end
+            task.wait(0.08)
+        end
+    end)
+end
+
+-- 2. Tự động cắn Trái cây, Potions và kích hoạt Đồ chơi (TUYỆT ĐỐI KHÔNG CẮM CỜ)
+local lastFruitCheck = 0
+local lastPotionCheck = 0
+local lastToyCheck = 0
+
+local function StepAutoBuffs()
+    if not Config.AutoBuffs or not Config.AutoBuffs.Enabled or not Modules.Network then return end
+    local now = os.clock()
+
+    -- A. Fruits: Ăn tối đa 20 quả/lần mỗi 120s
+    if Config.AutoBuffs.Fruits and now - lastFruitCheck >= 120 then
+        lastFruitCheck = now
+        pcall(function()
+            if not Modules.Save or not Modules.Save.Get then return end
+            local s = Modules.Save.Get()
+            local fruits = s and s.Inventory and s.Inventory.Fruit
+            if type(fruits) == "table" then
+                for _, item in pairs(fruits) do
+                    if type(item) == "table" and type(item.id) == "string" then
+                        local amt = tonumber(item._am) or 0
+                        if amt > 0 then
+                            local eatAmt = math.clamp(amt, 1, 20)
+                            pcall(Modules.Network.Fire, "Fruits: Consume", item.id, eatAmt)
+                            task.wait(0.06)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- B. Potions: Tự cắn Potions tăng Damage, Coins, Luck mỗi 180s
+    if Config.AutoBuffs.Potions and now - lastPotionCheck >= 180 then
+        lastPotionCheck = now
+        pcall(function()
+            if not Modules.Save or not Modules.Save.Get then return end
+            local s = Modules.Save.Get()
+            local potions = s and s.Inventory and s.Inventory.Potion
+            if type(potions) == "table" then
+                local targetTypes = { "damage", "coins", "luck", "lucky", "speed", "treasure", "pumpkin", "patch", "tycoon" }
+                for _, item in pairs(potions) do
+                    if type(item) == "table" and type(item.id) == "string" then
+                        local lowerId = string.lower(item.id)
+                        local matched = false
+                        for _, kw in ipairs(targetTypes) do
+                            if lowerId:find(kw) then
+                                matched = true
+                                break
+                            end
+                        end
+                        if matched and (tonumber(item._am) or 0) > 0 then
+                            pcall(Modules.Network.Fire, "Potions: Consume", item.id)
+                            task.wait(0.06)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- C. Toys: Dùng Toys từ Inventory.Misc mỗi 300s
+    if Config.AutoBuffs.Toys and now - lastToyCheck >= 300 then
+        lastToyCheck = now
+        pcall(function()
+            if not Modules.Save or not Modules.Save.Get then return end
+            local s = Modules.Save.Get()
+            local misc = s and s.Inventory and s.Inventory.Misc
+            if type(misc) == "table" then
+                for uid, item in pairs(misc) do
+                    if type(item) == "table" and type(item.id) == "string" then
+                        local toyUid = item._uid or uid
+                        if item.id == "Toy Ball" then
+                            pcall(Modules.Network.Invoke, "ToyBall_Consume", toyUid)
+                            task.wait(0.12)
+                        elseif item.id == "Toy Bone" then
+                            pcall(Modules.Network.Invoke, "ToyBone_Consume", toyUid)
+                            task.wait(0.12)
+                        elseif item.id == "Squeaky Toy" then
+                            pcall(Modules.Network.Invoke, "SqueakyToy_Consume", toyUid)
+                            task.wait(0.12)
+                        elseif item.id:lower():find("toy") then
+                            pcall(Modules.Network.Invoke, "Consumables_Consume", toyUid)
+                            task.wait(0.12)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- 3. BẢNG GUI MINI THEO DÕI TRỰC QUAN (SIÊU NHẸ CHO 80 ACC)
+local MiniGuiState = {
+    ScreenGui = nil,
+    CoinsLabel = nil,
+    ButtonLabel = nil,
+    HatchLabel = nil,
+    PhaseLabel = nil,
+    MailLabel = nil,
+}
+
+local function SetupMiniGui()
+    if Config.ShowGui == false then return end
+    pcall(function()
+        local CoreGui = game:GetService("CoreGui")
+        local parentTarget = (type(gethui) == "function" and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if not parentTarget then return end
+
+        local existing = parentTarget:FindFirstChild("KizHub_MiniTycoonGui")
+        if existing then existing:Destroy() end
+
+        local sg = Instance.new("ScreenGui")
+        sg.Name = "KizHub_MiniTycoonGui"
+        sg.ResetOnSpawn = false
+        sg.DisplayOrder = 9999
+
+        local f = Instance.new("Frame")
+        f.Name = "MiniContainer"
+        f.Size = UDim2.new(0, 275, 0, 132)
+        f.Position = UDim2.new(0, 15, 0, 50)
+        f.BackgroundColor3 = Color3.fromRGB(15, 17, 23)
+        f.BackgroundTransparency = 0.2
+        f.BorderSizePixel = 0
+        f.Active = true
+        f.Draggable = true
+        f.Parent = sg
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = f
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(56, 189, 248)
+        stroke.Thickness = 1.2
+        stroke.Parent = f
+
+        local title = Instance.new("TextLabel")
+        title.Size = UDim2.new(1, -16, 0, 20)
+        title.Position = UDim2.new(0, 10, 0, 4)
+        title.BackgroundTransparency = 1
+        title.Text = "👑 Kiz Hub • Tycoon Kaitun"
+        title.TextColor3 = Color3.fromRGB(248, 250, 252)
+        title.TextSize = 11
+        title.Font = Enum.Font.GothamBold
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.Parent = f
+
+        local function makeLabel(yPos, color)
+            local l = Instance.new("TextLabel")
+            l.Size = UDim2.new(1, -16, 0, 16)
+            l.Position = UDim2.new(0, 10, 0, yPos)
+            l.BackgroundTransparency = 1
+            l.TextColor3 = color
+            l.TextSize = 10
+            l.Font = Enum.Font.GothamMedium
+            l.TextXAlignment = Enum.TextXAlignment.Left
+            l.Parent = f
+            return l
+        end
+
+        MiniGuiState.CoinsLabel = makeLabel(24, Color3.fromRGB(251, 191, 36))
+        MiniGuiState.ButtonLabel = makeLabel(42, Color3.fromRGB(244, 114, 182))
+        MiniGuiState.HatchLabel = makeLabel(60, Color3.fromRGB(168, 85, 247))
+        MiniGuiState.PhaseLabel = makeLabel(78, Color3.fromRGB(56, 189, 248))
+        MiniGuiState.MailLabel = makeLabel(96, Color3.fromRGB(52, 211, 153))
+
+        sg.Parent = parentTarget
+        MiniGuiState.ScreenGui = sg
+    end)
+end
+
+local lastGuiUpdate = 0
+local function UpdateMiniGui()
+    if not MiniGuiState.ScreenGui or not MiniGuiState.ScreenGui.Parent then return end
+    local now = os.clock()
+    if now - lastGuiUpdate < 1.0 then return end
+    lastGuiUpdate = now
+
+    pcall(function()
+        local coins = Runtime.Stats.Coins or 0
+        local tokens = GetCurrency((PT and PT.TOKEN) or "PumpkinTokens") or 0
+        local hatched = Runtime.Stats.EggsHatched or 0
+        local gifts = Runtime.Stats.GiftsOpened or 0
+        local phase = Runtime.Stats.Phase or "Đang chạy..."
+        local mailStat = (MailState and MailState.Status) or "Rảnh"
+        local nextBtn = Runtime.Stats.NextButtonName or "..."
+        local missing = Runtime.Stats.MissingCoins or 0
+        local cost = Runtime.Stats.NextButtonCost or 0
+
+        if MiniGuiState.CoinsLabel then
+            MiniGuiState.CoinsLabel.Text = string.format("💰 Coins: %s • 🎟️ Tokens: %s", ShortenNumber(coins), ShortenNumber(tokens))
+        end
+        if MiniGuiState.ButtonLabel then
+            if nextBtn == "Đã xong tất cả" then
+                MiniGuiState.ButtonLabel.Text = "🔘 Nút: Hoàn thành 100% tất cả!"
+            elseif missing > 0 then
+                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s (Thiếu %s)", tostring(nextBtn), ShortenNumber(missing))
+            elseif cost > 0 then
+                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s (Đủ tiền mua!)", tostring(nextBtn))
+            else
+                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s", tostring(nextBtn))
+            end
+        end
+        if MiniGuiState.HatchLabel then
+            MiniGuiState.HatchLabel.Text = string.format("🥚 Hatched: %s • 🎁 Gifts: %s", ShortenNumber(hatched), ShortenNumber(gifts))
+        end
+        if MiniGuiState.PhaseLabel then
+            MiniGuiState.PhaseLabel.Text = string.format("📌 %s", tostring(phase))
+        end
+        if MiniGuiState.MailLabel then
+            MiniGuiState.MailLabel.Text = string.format("📦 Mail: %s", tostring(mailStat))
+        end
+    end)
+end
+
 -- ============================================================================
 -- 13. MAIN CONCURRENT LOOPS
 -- ============================================================================
@@ -4555,6 +4866,9 @@ local function StartLoops()
                 StepOpenFlannelGifts()
                 StepCraftPets(plot, buttons)
                 StepEventPass()
+                StepFreeGifts()
+                StepAutoBuffs()
+                UpdateMiniGui()
             end)
             if not ok then
                 Log("DEBUG", "Manager loop error: %s", tostring(err))
@@ -4648,6 +4962,7 @@ if WaitReady() and IsRunning() then
     StepPetSpeedBuff()
     SetupMapOptimizer()
     pcall(CheckNewHugeWatcher)
+    SetupMiniGui()
     Log("INFO", "Pumpkin Patch Tycoon Kaitun initialized (RushButtons=%s, KeepRung=%d, TargetEgg=%s, PetSpeed=%sx, OptimizeMap=%s).",
         tostring(Config.RushButtonsFirst),
         tonumber(Config.KeepRung) or 0,
