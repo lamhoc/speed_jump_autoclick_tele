@@ -40,10 +40,27 @@ local function safeRequire(pathTbl)
     local cur = ReplicatedStorage
     for _, part in ipairs(pathTbl) do
         cur = cur and cur:FindFirstChild(part)
-        if not cur then return nil end
+        if not cur then break end
     end
-    local ok, res = pcall(require, cur)
-    return ok and res or nil
+    if cur and cur:IsA("ModuleScript") then
+        local ok, res = pcall(require, cur)
+        if ok and res then return res end
+    end
+
+    -- Fallback: Tìm đệ quy theo tên module
+    local targetName = pathTbl[#pathTbl]
+    if targetName then
+        local lib = ReplicatedStorage:FindFirstChild("Library")
+        local found = lib and lib:FindFirstChild(targetName, true)
+        if not found then
+            found = ReplicatedStorage:FindFirstChild(targetName, true)
+        end
+        if found and found:IsA("ModuleScript") then
+            local ok, res = pcall(require, found)
+            if ok and res then return res end
+        end
+    end
+    return nil
 end
 
 local function initMachineLibs()
@@ -446,46 +463,59 @@ local lastGiftCheck = 0
 local function runFlannelGifts(plot)
     if not Config.AutoOpenFlannelGifts then return end
     local now = os.clock()
-    if now - lastGiftCheck < (Config.GiftOpenInterval or 60) then return end
+    if now - lastGiftCheck < (Config.GiftOpenInterval or 5) then return end
     lastGiftCheck = now
 
     pcall(function()
-        local s = Network.getSave()
+        local Save = safeRequire({ "Library", "Client", "Save" })
+        local s = (Save and type(Save.Get) == "function" and Save.Get()) or (Network and Network.getSave and Network.getSave())
         local inv = s and s.Inventory
         if not inv then return end
 
+        local LootboxCmds = safeRequire({ "Library", "Client", "LootboxCmds" })
         local targetCategories = { "Lootbox", "Box", "Gift", "Misc", "Consumable" }
         for _, cat in ipairs(targetCategories) do
             local folder = inv[cat]
             if type(folder) == "table" then
                 for uid, item in pairs(folder) do
                     if type(item) == "table" then
-                        local itemId = tostring(item.id or item._id or uid or "")
-                        if itemId:lower():find("flannel") then
-                            local am = tonumber(item._am or item.Amount or item.am or 1) or 1
+                        local itemId = tostring(item.id or item._id or ""):lower()
+                        local am = tonumber(item._am or item.Amount or item.am or 1) or 1
+                        if itemId:find("flannel") and am >= 1 then
                             local count = math.clamp(am, 1, 100)
+                            local realObj = (LootboxCmds and type(LootboxCmds.Get) == "function" and LootboxCmds.Get(uid))
+                                or { class = "Lootbox", data = { id = item.id or "Flannel Gift" }, uid = uid }
 
-                            -- Mở quà chuẩn xác 100% theo chữ ký LootboxCmds.Open & Remote YR_Hydrate đã bắt được từ game
-                            local itemObj = {
-                                class = item.Class or cat or "Lootbox",
-                                data = { id = item.id or "Flannel Gift" },
-                                uid = uid,
-                            }
-
-                            local LootboxCmds = safeRequire({ "Library", "Client", "LootboxCmds" })
                             local opened = false
-                            if LootboxCmds and type(LootboxCmds.Open) == "function" then
-                                local okLb = pcall(LootboxCmds.Open, itemObj, count)
-                                if okLb then opened = true end
+
+                            -- (a) Network.netInvoke("Lootbox: Open", uid, count)
+                            local okA, resA = pcall(function()
+                                return Network.netInvoke("Lootbox: Open", uid, count)
+                            end)
+                            if okA and resA then opened = true end
+
+                            -- (b) fallback LootboxCmds.Open(realObj, count)
+                            if not opened and LootboxCmds and type(LootboxCmds.Open) == "function" then
+                                local okB, resB = pcall(LootboxCmds.Open, realObj, count)
+                                if okB then opened = true end
                             end
 
+                            -- Dự phòng Spy: Remote YR_Hydrate
                             if not opened then
                                 pcall(function()
                                     Network.netInvoke("YR_Hydrate", uid, count, {})
                                 end)
                             end
 
+                            -- (c) fallback Network.netInvoke("PumpkinTycoon_GiftOpen", count)
+                            if not opened then
+                                pcall(function()
+                                    Network.netInvoke("PumpkinTycoon_GiftOpen", count)
+                                end)
+                            end
+
                             task.wait(0.2)
+                            -- Trigger Webhook.checkNewHugeHatched after opening
                             pcall(function()
                                 local genv = (type(getgenv) == "function" and getgenv()) or _G
                                 local eventsUrl = (Config and Config.Webhook and Config.Webhook.EventsUrl)

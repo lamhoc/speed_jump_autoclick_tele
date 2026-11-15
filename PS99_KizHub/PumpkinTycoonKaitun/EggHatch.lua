@@ -28,10 +28,27 @@ local function safeRequire(pathTbl)
     local cur = ReplicatedStorage
     for _, part in ipairs(pathTbl) do
         cur = cur and cur:FindFirstChild(part)
-        if not cur then return nil end
+        if not cur then break end
     end
-    local ok, res = pcall(require, cur)
-    return ok and res or nil
+    if cur and cur:IsA("ModuleScript") then
+        local ok, res = pcall(require, cur)
+        if ok and res then return res end
+    end
+
+    -- Fallback: Tìm đệ quy theo tên module
+    local targetName = pathTbl[#pathTbl]
+    if targetName then
+        local lib = ReplicatedStorage:FindFirstChild("Library")
+        local found = lib and lib:FindFirstChild(targetName, true)
+        if not found then
+            found = ReplicatedStorage:FindFirstChild(targetName, true)
+        end
+        if found and found:IsA("ModuleScript") then
+            local ok, res = pcall(require, found)
+            if ok and res then return res end
+        end
+    end
+    return nil
 end
 
 local function initEggLibs()
@@ -382,14 +399,16 @@ function EggHatch.hatchBestEggTick(state)
             -- GIAI ĐOẠN 2: Sau 3 phút & đảo CHƯA đạt 100% -> TÍCH 100% COIN MUA SẠCH NÚT ĐỂ ĐẠT 100% ĐẢO
             local percentVal = math.floor(((prog.percent or 0) * 100) * 10) / 10
             local btnInfo = TycoonFarm and type(TycoonFarm.getNextButtonInfo) == "function" and TycoonFarm.getNextButtonInfo()
-            if btnInfo then
+            if btnInfo and btnInfo.price and btnInfo.price > 0 then
                 if btnInfo.canAfford then
                     state.hatchStatus = string.format("Nút tới: %s (%s) • ĐÃ ĐỦ COIN (Đang mua!)", btnInfo.name, Network.shorten(btnInfo.price))
                 else
                     state.hatchStatus = string.format("Nút tới: %s (%s) • Thiếu %s Coins (Đảo: %.1f%%)", btnInfo.name, Network.shorten(btnInfo.price), Network.shorten(btnInfo.missing), percentVal)
                 end
+            elseif btnInfo and btnInfo.name then
+                state.hatchStatus = string.format("Nút tới: %s • Đang tích coin (Đảo: %.1f%%)", btnInfo.name, percentVal)
             else
-                state.hatchStatus = string.format("Tích coin hoàn thành 100%% đảo (%d/%d nút • %.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
+                state.hatchStatus = string.format("Tích coin mua nút tiếp theo (%d/%d nút • %.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
             end
             return -- Ngưng mở trứng hoàn toàn để dành 100% coins cho TycoonFarm mua nút!
         end

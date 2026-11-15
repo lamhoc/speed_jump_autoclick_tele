@@ -7,12 +7,12 @@
 local genv = (type(getgenv) == "function" and getgenv()) or _G
 
 local Config = {
-    -- Cài đặt chung & Hiệu năng (BẢN TEST DELTA - ẨN GUI HOÀN TOÀN, KHÔNG OPTIMIZE)
+    -- Cài đặt chung & Hiệu năng (BẢN KHÔNG OPTIMIZE - FULL 3D, 60 FPS, HIỆN GUI ĐẦY ĐỦ)
     Enabled = true,
-    ShowGui = false,            -- [DELTA]: Ẩn hoàn toàn GUI bảng điều khiển trên màn hình theo yêu cầu của dj
-    CPUSaver = false,           -- [BẢN TEST]: Tắt CPU Saver để quan sát nhân vật, pet và hiệu ứng 3D
+    ShowGui = true,             -- [GUI]: Hiển thị đầy đủ bảng điều khiển theo dõi thời gian thực
+    CPUSaver = false,           -- [NON-OPTI]: Tắt CPU Saver, bật full 3D Rendering để quan sát trực quan
     TargetFPS = 60,             -- FPS mượt mà 60 FPS
-    Blackout = false,           -- Tắt màn hình đen
+    Blackout = false,           -- Tắt màn hình đen, hiển thị toàn bộ đồ họa game
     HidePlayers = false,        -- Hiện người chơi bình thường
     AfkPulseInterval = 35,
 
@@ -107,8 +107,8 @@ local Config = {
     -- Mailbox & Quà tặng
     AutoDaycare = false,
     AutoMailHuge = true,
-    AutoMailTier2Boosts = false -- ĐÃ TẮT THEO LỆNH DJ: Boost Tier 2 được giữ lại để acc tự cắn tăng tốc độ farm & hatch, -- Tự động gift qua Mailbox khi có Tier 2 Boost (Island Luck, Patch Coin, Pumpkin Damage) dù chỉ 1 cái
-    AutoConsumeBoosts = true    -- Tự động cắn mọi Boost (Tier 1 & Tier 2) để tối ưu farm, -- Tự động cắn Boost Tier 1 để tối ưu farm
+    AutoMailTier2Boosts = false, -- ĐÃ TẮT THEO LỆNH DJ: Boost Tier 2 được giữ lại để acc tự cắn tăng tốc độ farm & hatch
+    AutoConsumeBoosts = true,    -- Tự động cắn mọi Boost (Tier 1 & Tier 2) để tối ưu farm
     MailRecipient = genv.MailRecipient or "Kizmoii_VNG",
     MailRetryInterval = 1800,
     MailCooldownSec = 61,
