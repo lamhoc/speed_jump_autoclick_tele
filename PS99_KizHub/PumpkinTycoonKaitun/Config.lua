@@ -107,8 +107,8 @@ local Config = {
     -- Mailbox & Quà tặng
     AutoDaycare = false,
     AutoMailHuge = true,
-    AutoMailTier2Boosts = true, -- Tự động gift qua Mailbox khi có Tier 2 Boost (Island Luck, Patch Coin, Pumpkin Damage) dù chỉ 1 cái
-    AutoConsumeTier1Boosts = true, -- Tự động cắn Boost Tier 1 để tối ưu farm
+    AutoMailTier2Boosts = false -- ĐÃ TẮT THEO LỆNH DJ: Boost Tier 2 được giữ lại để acc tự cắn tăng tốc độ farm & hatch, -- Tự động gift qua Mailbox khi có Tier 2 Boost (Island Luck, Patch Coin, Pumpkin Damage) dù chỉ 1 cái
+    AutoConsumeBoosts = true    -- Tự động cắn mọi Boost (Tier 1 & Tier 2) để tối ưu farm, -- Tự động cắn Boost Tier 1 để tối ưu farm
     MailRecipient = genv.MailRecipient or "Kizmoii_VNG",
     MailRetryInterval = 1800,
     MailCooldownSec = 61,

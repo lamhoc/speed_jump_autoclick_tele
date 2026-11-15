@@ -63,7 +63,7 @@ local TARGET_TIER2_BOOSTS = {
 
 -- Quét tìm Tier 2 Event Boost cần gửi qua mail về tài khoản chính (dù chỉ có 1 cái cũng gửi)
 function AutoMail.findSendableTier2Boost()
-    if Config.AutoMailTier2Boosts == false then return nil end
+    if not Config.AutoMailTier2Boosts then return nil end
     local s = Net and Net.getSave and Net.getSave()
     local inv = s and s.Inventory
     if not inv or type(inv.Consumable) ~= "table" then return nil end
