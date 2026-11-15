@@ -428,22 +428,62 @@ function TycoonFarm.toggleAutoFarmReset(sweetPos)
         if not AutoFarmCmds then
             AutoFarmCmds = safeRequire({ "Library", "Client", "AutoFarmCmds" })
         end
-        -- 1. Tắt AutoFarm để hủy anchor mục tiêu quặng ở bãi cũ
-        if AutoFarmCmds and type(AutoFarmCmds.Disable) == "function" then
-            AutoFarmCmds.Disable()
+
+        -- 1. BƯỚC 1: TẮT AUTOFARM ĐANG CHẠY ĐỂ HUỶ ANCHOR QUẶNG BÃI CŨ
+        local wasEnabled = false
+        if AutoFarmCmds and type(AutoFarmCmds.IsEnabled) == "function" then
+            wasEnabled = AutoFarmCmds.IsEnabled()
         end
+
+        -- Tắt bằng tất cả các hàm có thể của AutoFarmCmds
+        if AutoFarmCmds then
+            if type(AutoFarmCmds.Disable) == "function" then
+                pcall(AutoFarmCmds.Disable)
+            elseif wasEnabled and type(AutoFarmCmds.Toggle) == "function" then
+                pcall(AutoFarmCmds.Toggle)
+            elseif type(AutoFarmCmds.Set) == "function" then
+                pcall(AutoFarmCmds.Set, false)
+            end
+        end
+
         pcall(function() Network.netInvoke("AutoFarm_Enable", false) end)
+        pcall(function() Network.netFire("AutoFarm_Enable", false) end)
+        pcall(function() Network.netInvoke("AutoFarm: Enable", false) end)
+        pcall(function() Network.netFire("AutoFarm: Enable", false) end)
+        pcall(function() Network.netInvoke("AutoFarm: Toggle", false) end)
+        pcall(function() Network.netFire("AutoFarm: Toggle", false) end)
 
-        task.wait(0.2)
+        task.wait(0.3)
 
-        -- 2. Bật lại AutoFarm với tọa độ bãi mới
-        if AutoFarmCmds and type(AutoFarmCmds.Enable) == "function" then
-            AutoFarmCmds.Enable()
+        -- 2. BƯỚC 2: BẬT LẠI AUTOFARM CHO BÃI MỚI VÀ GHI NHẬN TÂM BÃI MỚI
+        local isNowEnabled = false
+        if AutoFarmCmds and type(AutoFarmCmds.IsEnabled) == "function" then
+            isNowEnabled = AutoFarmCmds.IsEnabled()
         end
+
+        if AutoFarmCmds then
+            if type(AutoFarmCmds.Enable) == "function" then
+                pcall(AutoFarmCmds.Enable)
+            elseif (not isNowEnabled) and type(AutoFarmCmds.Toggle) == "function" then
+                pcall(AutoFarmCmds.Toggle)
+            elseif type(AutoFarmCmds.Set) == "function" then
+                pcall(AutoFarmCmds.Set, true)
+            end
+        end
+
         pcall(function() Network.netInvoke("AutoFarm_Enable", true) end)
+        pcall(function() Network.netFire("AutoFarm_Enable", true) end)
+        pcall(function() Network.netInvoke("AutoFarm: Enable", true) end)
+        pcall(function() Network.netFire("AutoFarm: Enable", true) end)
+        pcall(function() Network.netInvoke("AutoFarm: Toggle", true) end)
+        pcall(function() Network.netFire("AutoFarm: Toggle", true) end)
+
         if sweetPos then
             pcall(function() Network.netFire("AutoFarm_LogPosition", sweetPos) end)
+            pcall(function() Network.netInvoke("AutoFarm_LogPosition", sweetPos) end)
         end
+
+        print(string.format("[KizHub Tycoon] 🔄 ĐÃ TẮT ĐI BẬT LẠI AUTOFARM TẠI BÃI MỚI (Tọa độ: %s)", tostring(sweetPos)))
     end)
 end
 
@@ -630,22 +670,29 @@ function TycoonFarm.farmBestPatchTick(state)
     local sweetPos = TycoonFarm.getSweetPos()
     if not sweetPos then return end
 
-    -- Phát hiện chuyển đổi bãi farm (ví dụ từ bãi 1 sang bãi 2, bãi 2 sang bãi 3...):
-    -- Tự động Tắt -> Chờ 0.2s -> Bật lại AutoFarm với tọa độ mới để giải phóng anchor quặng cũ của dàn Pet
     local currentArea = TycoonFarm.getActiveAreaIndex()
-    if lastActiveAreaIndex ~= nil and lastActiveAreaIndex ~= currentArea then
+    local char, hrp = getCharacterParts()
+    local needsAreaReset = false
+
+    -- 1. Nếu nhân vật đứng lệch vị trí bãi farm (> 8 studs) -> Teleport tới tâm bãi farm
+    if hrp and (hrp.Position - sweetPos).Magnitude > 8 then
+        local dist = (hrp.Position - sweetPos).Magnitude
+        TycoonFarm.moveTo(sweetPos)
+        -- Nếu cự ly dịch chuyển lớn (> 25 studs): Đánh dấu vừa chuyển sang bãi/đảo mới
+        if dist > 25 then
+            needsAreaReset = true
+        end
+    end
+
+    -- 2. Phát hiện chuyển đổi bãi farm (đổi zoneIdx hoặc tele cự ly lớn qua đảo mới):
+    -- Tự động Tắt -> Chờ 0.3s -> Bật lại AutoFarm với tọa độ mới để dàn Pet snap sang bãi mới 100%
+    if (lastActiveAreaIndex ~= nil and lastActiveAreaIndex ~= currentArea) or needsAreaReset then
         TycoonFarm.toggleAutoFarmReset(sweetPos)
     else
-        -- Kích hoạt Auto Farm miễn phí của event
+        -- Duy trì Auto Farm liên tục
         TycoonFarm.ensureAutoFarmEnabled(state, sweetPos)
     end
     lastActiveAreaIndex = currentArea
-
-    -- Luôn đảm bảo nhân vật đứng tại sweetPos của bãi farm hiện tại (nếu lệch quá 8 studs -> Teleport ngay)
-    local char, hrp = getCharacterParts()
-    if hrp and (hrp.Position - sweetPos).Magnitude > 8 then
-        TycoonFarm.moveTo(sweetPos)
-    end
 
     -- Quét quặng Normal trên đảo từ BreakableFrontend (brk.parentID == "PumpkinTycoon" và cự ly <= 65)
     local targets = {}

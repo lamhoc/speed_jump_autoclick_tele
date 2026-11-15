@@ -257,9 +257,13 @@ local function ensureInPumpkinTycoon()
                     end
                 end
             end)
-            -- Đặt cấu hình AutoBreak về 0 ngay khi vào đảo
+            -- Đặt cấu hình AutoBreak về 0 ngay khi vào đảo và kích hoạt lại AutoFarm
             if TycoonFarm and type(TycoonFarm.ensureAutoBreakZero) == "function" then
                 TycoonFarm.ensureAutoBreakZero()
+            end
+            if TycoonFarm and type(TycoonFarm.toggleAutoFarmReset) == "function" then
+                local sweetPos = TycoonFarm.getSweetPos and TycoonFarm.getSweetPos()
+                TycoonFarm.toggleAutoFarmReset(sweetPos)
             end
             return true
         end
