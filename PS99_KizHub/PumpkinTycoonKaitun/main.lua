@@ -10,8 +10,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
-local GITHUB_REPO_BASE = (type(getgenv) == "function" and getgenv().KizHubRepoBase) or "https://raw.githubusercontent.com/accphu0803-tech/nobodyhere/refs/heads/main/PS99_KizHub/"
-local GITHUB_FALLBACK_BASE = "https://raw.githubusercontent.com/lamhoc/speed_jump_autoclick_tele/refs/heads/main/PS99_KizHub/"
+local GITHUB_REPO_BASE = (type(getgenv) == "function" and getgenv().KizHubRepoBase) or "https://raw.githubusercontent.com/lamhoc/speed_jump_autoclick_tele/refs/heads/main/PS99_KizHub/"
+local GITHUB_FALLBACK_BASE = "https://raw.githubusercontent.com/accphu0803-tech/nobodyhere/refs/heads/main/PS99_KizHub/"
 
 local function readFileSafe(path)
     if type(readfile) == "function" then
@@ -190,10 +190,8 @@ if Config.CPUSaver ~= false then
     EngineOptim.startMemoryCleanupLoop()
     print("[KizHub Tycoon] ❄️ ĐÃ KÍCH HOẠT CHẾ ĐỘ CPU SAVER (3D Rendering Off, Cap FPS, Mute)!")
 else
-    EngineOptim.applyAll(Config.TargetFPS or 5, Config.Blackout ~= false)
-    if Config.HidePlayers then
-        EngineOptim.hideOtherPlayers()
-    end
+    EngineOptim.restoreNormal(Config.TargetFPS or 60)
+    print("[KizHub Tycoon] 🎮 ĐÃ KÍCH HOẠT BẢN TEST TRỰC QUAN (3D Rendering ON, 60 FPS, Đồ họa chuẩn)!")
 end
 
 if Config.InfinitePetSpeed ~= false and TycoonFarm and type(TycoonFarm.installInfinitePetSpeed) == "function" then

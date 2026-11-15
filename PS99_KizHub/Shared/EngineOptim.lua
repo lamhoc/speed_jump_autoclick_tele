@@ -289,6 +289,9 @@ function EngineOptim.restoreNormal(targetFps)
         if type(setfpscap) == "function" then
             setfpscap(tonumber(targetFps) or 60)
         end
+        local pgui = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        local bo = pgui and pgui:FindFirstChild("KizHubUltraBlackout")
+        if bo then bo:Destroy() end
     end)
 end
 

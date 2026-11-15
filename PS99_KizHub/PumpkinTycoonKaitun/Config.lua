@@ -7,12 +7,12 @@
 local genv = (type(getgenv) == "function" and getgenv()) or _G
 
 local Config = {
-    -- Cài đặt chung & Hiệu năng
+    -- Cài đặt chung & Hiệu năng (BẢN TEST TRỰC QUAN - KHÔNG OPTIMIZE)
     Enabled = true,
-    CPUSaver = true,            -- [CPU Saver]: Giảm tải CPU/GPU cực đại cho dàn acc (3D Rendering Off, Cap FPS, Mute)
-    TargetFPS = 5,
-    Blackout = true,
-    HidePlayers = true,
+    CPUSaver = false,           -- [BẢN TEST]: Tắt CPU Saver để quan sát nhân vật, pet và hiệu ứng 3D
+    TargetFPS = 60,             -- FPS mượt mà 60 FPS
+    Blackout = false,           -- Tắt màn hình đen
+    HidePlayers = false,        -- Hiện người chơi bình thường
     AfkPulseInterval = 35,
 
     -- Tốc độ Pet siêu tốc (Infinite Pet Speed)
