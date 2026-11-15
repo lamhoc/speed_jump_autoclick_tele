@@ -226,9 +226,47 @@ end)
 -- =========================================================================
 
 local lastEnterAttempt = 0
+local lastIslandTeleportAttempt = 0
 
 local function ensureInPumpkinTycoon()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local playerPos = hrp and hrp.Position or Vector3.zero
+    local isAtEventSpawn = (playerPos - Vector3.new(10044.4, 2008.0, 7832.23)).Magnitude < 120
+    local plot = TycoonFarm and type(TycoonFarm.getPlot) == "function" and TycoonFarm.getPlot()
+
     if inEvent() then
+        -- Khi đã ở trong event nhưng chưa có plot hoặc còn đứng ở spawn/entry area
+        if not plot or isAtEventSpawn then
+            local now = os.clock()
+            if now - lastIslandTeleportAttempt >= 1.5 then
+                lastIslandTeleportAttempt = now
+                pcall(function()
+                    local islandCmds = require(ReplicatedStorage.Library.Client.PumpkinTycoonCmds.Island)
+                    if islandCmds and type(islandCmds.GetTeleport) == "function" then
+                        local teleCF = islandCmds.GetTeleport()
+                        if teleCF and Network and Network.teleportTo then
+                            Network.teleportTo(teleCF)
+                        elseif teleCF and hrp then
+                            hrp.CFrame = (typeof(teleCF) == "CFrame" and teleCF) or CFrame.new(teleCF)
+                        end
+                    end
+                end)
+                task.wait(0.5)
+                if TycoonFarm and type(TycoonFarm.getSweetPos) == "function" then
+                    local sweetPos = TycoonFarm.getSweetPos()
+                    if sweetPos then
+                        if TycoonFarm and type(TycoonFarm.moveTo) == "function" then
+                            TycoonFarm.moveTo(sweetPos)
+                        elseif Network and Network.teleportTo then
+                            Network.teleportTo(CFrame.new(sweetPos + Vector3.new(0, 2.5, 0)))
+                        elseif hrp then
+                            hrp.CFrame = CFrame.new(sweetPos + Vector3.new(0, 2.5, 0))
+                        end
+                    end
+                end
+            end
+        end
         return true
     end
 
@@ -260,7 +298,6 @@ local function ensureInPumpkinTycoon()
                     end
                 end
             end)
-            -- Đặt cấu hình AutoBreak về 0 ngay khi vào đảo và kích hoạt lại AutoFarm
             if TycoonFarm and type(TycoonFarm.ensureAutoBreakZero) == "function" then
                 TycoonFarm.ensureAutoBreakZero()
             end

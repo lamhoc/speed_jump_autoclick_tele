@@ -137,6 +137,8 @@ end
 -- 1. TRUY VẤN PLOT VÀ MÔ HÌNH ĐẢO CỦA NGƯỜI CHƠI
 -- =========================================================================
 
+local hasAttemptedIslandInit = false
+
 function TycoonFarm.getPlot()
     initGameLibs()
     if ClientPlot and type(ClientPlot.GetByPlayer) == "function" then
@@ -149,6 +151,30 @@ function TycoonFarm.getPlot()
         local ok, plot = pcall(IslandCmds.Plot)
         if ok and plot then return plot end
     end
+
+    -- Nếu cả ClientPlot và IslandCmds.Plot() đều nil: gọi OnJoin / GetTeleport một lần để client khởi tạo ClientPlot
+    if not hasAttemptedIslandInit and IslandCmds then
+        hasAttemptedIslandInit = true
+        pcall(function()
+            if type(IslandCmds.OnJoin) == "function" then
+                IslandCmds.OnJoin()
+            end
+            if type(IslandCmds.GetTeleport) == "function" then
+                IslandCmds.GetTeleport()
+            end
+        end)
+        if ClientPlot and type(ClientPlot.GetByPlayer) == "function" then
+            local ok, plot = pcall(ClientPlot.GetByPlayer, LocalPlayer)
+            if ok and plot and not (type(plot.IsDestroyed) == "function" and plot:IsDestroyed()) then
+                return plot
+            end
+        end
+        if IslandCmds and type(IslandCmds.Plot) == "function" then
+            local ok, plot = pcall(IslandCmds.Plot)
+            if ok and plot then return plot end
+        end
+    end
+
     -- Fallback 1: tìm trong workspace.__THINGS.Plots theo UserId hoặc Player
     local things = workspace:FindFirstChild("__THINGS")
     local plots = things and (things:FindFirstChild("Plots") or things:FindFirstChild("PumpkinTycoonPlots") or things:FindFirstChild("TycoonPlots"))
@@ -159,18 +185,35 @@ function TycoonFarm.getPlot()
                 return p
             end
         end
-        -- Fallback 2: tìm model gần nhân vật nhất trong plots (chuẩn get_pos)
+
+        -- Fallback 2: match plot whose SpawnPosition is closest to hrp.Position
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local myPos = hrp and hrp.Position or Vector3.zero
-        local closestDist = 2500
+        local closestDist = math.huge
         local closestModel = nil
         for _, p in ipairs(plots:GetChildren()) do
             if p:IsA("Model") then
-                local dist = (p:GetPivot().Position - myPos).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closestModel = p
+                local spawnPos = p:GetAttribute("SpawnPosition")
+                local pPos = nil
+                if typeof(spawnPos) == "Vector3" then
+                    pPos = spawnPos
+                elseif typeof(spawnPos) == "CFrame" then
+                    pPos = spawnPos.Position
+                else
+                    local spawnPart = p:FindFirstChild("Spawn", true) or p:FindFirstChild("SpawnLocation", true)
+                    if spawnPart and spawnPart:IsA("BasePart") then
+                        pPos = spawnPart.Position
+                    else
+                        pPos = p:GetPivot().Position
+                    end
+                end
+                if pPos then
+                    local dist = (pPos - myPos).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestModel = p
+                    end
                 end
             end
         end
@@ -260,47 +303,54 @@ end
 -- =========================================================================
 
 function TycoonFarm.getPlotPivot()
-    local plotModel = TycoonFarm.getPlotModel()
-    if plotModel and typeof(plotModel) == "Instance" then
-        local okP, pcf = pcall(function() return plotModel:GetPivot() end)
-        if okP and typeof(pcf) == "CFrame" and pcf.Position.Magnitude > 0 then
-            return pcf
-        end
-        if plotModel.PrimaryPart then
-            return plotModel.PrimaryPart.CFrame
-        end
-    end
     local plot = TycoonFarm.getPlot()
+    -- 1. Ưu tiên cao nhất: plot:GetCFrame() (vì toàn bộ 5 offset FARM_AREAS được lưu theo hệ toạ độ này)
     if plot then
-        if typeof(plot) == "Instance" then
-            local okP, pcf = pcall(function() return plot:GetPivot() end)
-            if okP and typeof(pcf) == "CFrame" and pcf.Position.Magnitude > 0 then
-                return pcf
-            end
-        elseif type(plot.GetCFrame) == "function" then
+        if type(plot.GetCFrame) == "function" then
             local ok, cf = pcall(plot.GetCFrame, plot)
             if ok and typeof(cf) == "CFrame" and cf.Position.Magnitude > 0 then
                 return cf
             end
+        elseif typeof(plot) == "Instance" and plot:IsA("Model") then
+            if plot.PrimaryPart then
+                return plot.PrimaryPart.CFrame
+            end
+            local okP, pcf = pcall(function() return plot:GetPivot() end)
+            if okP and typeof(pcf) == "CFrame" and pcf.Position.Magnitude > 0 then
+                return pcf
+            end
         end
     end
 
-    -- Fallback: tìm trong workspace.__THINGS.Plots model gần nhất
+    -- 2. Fallback: plotModel.PrimaryPart.CFrame rồi plotModel:GetPivot()
+    local plotModel = TycoonFarm.getPlotModel()
+    if plotModel and typeof(plotModel) == "Instance" then
+        if plotModel.PrimaryPart then
+            return plotModel.PrimaryPart.CFrame
+        end
+        local okP, pcf = pcall(function() return plotModel:GetPivot() end)
+        if okP and typeof(pcf) == "CFrame" and pcf.Position.Magnitude > 0 then
+            return pcf
+        end
+    end
+
+    -- 3. Fallback: tìm trong workspace.__THINGS.Plots model có SpawnPosition gần nhất
     local things = workspace:FindFirstChild("__THINGS")
     local plots = things and (things:FindFirstChild("Plots") or things:FindFirstChild("PumpkinTycoonPlots") or things:FindFirstChild("TycoonPlots"))
     if plots then
         local char = LocalPlayer and LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local myPos = hrp and hrp.Position or Vector3.zero
-        local closestDist = 3000
+        local closestDist = math.huge
         local closestCf = nil
         for _, p in ipairs(plots:GetChildren()) do
             if p:IsA("Model") then
-                local pcf = p:GetPivot()
-                local dist = (pcf.Position - myPos).Magnitude
+                local spawnPos = p:GetAttribute("SpawnPosition")
+                local pPos = (typeof(spawnPos) == "Vector3" and spawnPos) or (typeof(spawnPos) == "CFrame" and spawnPos.Position) or p:GetPivot().Position
+                local dist = (pPos - myPos).Magnitude
                 if dist < closestDist then
                     closestDist = dist
-                    closestCf = pcf
+                    closestCf = p.PrimaryPart and p.PrimaryPart.CFrame or p:GetPivot()
                 end
             end
         end
@@ -425,6 +475,22 @@ function TycoonFarm.getActiveAreaIndex()
     return 1
 end
 
+local function getBrkData(k, v)
+    local brkObj = (type(v) == "table" and v) or (type(k) == "table" and k) or {}
+    local uid = brkObj.uid or (type(k) == "string" and k) or (type(v) == "string" and v) or (brkObj.model and brkObj.model.Name)
+    local model = brkObj.model or (typeof(v) == "Instance" and v) or (typeof(k) == "Instance" and k)
+    local parentID = brkObj.parentID or (model and model:GetAttribute("ParentID"))
+    local pos = brkObj.position or (model and model:GetPivot().Position) or (brkObj.GetPosition and brkObj:GetPosition())
+    local clientAttrs = brkObj.clientAttributes or (model and model:GetAttributes()) or {}
+    return {
+        uid = uid,
+        model = model,
+        parentID = parentID,
+        position = pos,
+        clientAttributes = clientAttrs,
+    }
+end
+
 local lastActiveAreaIndex = nil
 
 function TycoonFarm.getSweetPos()
@@ -432,101 +498,10 @@ function TycoonFarm.getSweetPos()
     local areaData = FARM_AREAS[areaIdx] or FARM_AREAS[1]
 
     local plotPivot = TycoonFarm.getPlotPivot()
-    local plotModel = TycoonFarm.getPlotModel()
+    if not plotPivot then return nil end
 
-    -- 1. Chuẩn toán học đảo: Biến đổi Relative Offset qua ma trận xoay của Plot (giống chuẩn Bãi 1 & 2)
-    local basePos = nil
-    if areaData.offset and plotPivot then
-        basePos = plotPivot:PointToWorldSpace(areaData.offset)
-    elseif plotModel and areaData.eggAttr then
-        local eggAttr = plotModel:GetAttribute(areaData.eggAttr)
-        if typeof(eggAttr) == "CFrame" then
-            basePos = eggAttr.Position + Vector3.new(0, 2.5, 8)
-        elseif typeof(eggAttr) == "Vector3" then
-            basePos = eggAttr + Vector3.new(0, 2.5, 8)
-        end
-    end
-
-    -- Fallback 2: Quét tìm trực tiếp Trứng của Bãi này trong workspace.__THINGS.CustomEggs
-    if not basePos then
-        pcall(function()
-            local things = workspace:FindFirstChild("__THINGS")
-            local customEggs = things and things:FindFirstChild("CustomEggs")
-            if customEggs and areaData.zoneAliases then
-                for _, egg in ipairs(customEggs:GetChildren()) do
-                    local nameLower = egg.Name:lower()
-                    for _, alias in ipairs(areaData.zoneAliases) do
-                        local cleanAlias = alias:lower():gsub("_.*", "")
-                        if nameLower:find(cleanAlias) then
-                            basePos = egg:GetPivot().Position + Vector3.new(0, 2.5, 12)
-                            return
-                        end
-                    end
-                end
-            end
-        end)
-    end
-
-    -- Fallback 3: Tìm cụm quặng của PumpkinTycoon
-    if not basePos then
-        pcall(function()
-            if BreakableFrontend and type(BreakableFrontend.AllByInstanceAndClass) == "function" then
-                local ok, normals = pcall(BreakableFrontend.AllByInstanceAndClass, "Normal")
-                if ok and type(normals) == "table" then
-                    local sumPos = Vector3.zero
-                    local count = 0
-                    for k, v in pairs(normals) do
-                        local brk = getBrkData(k, v)
-                        local isTycoon = (brk.parentID == "PumpkinTycoon") or (brk.model and brk.model:GetAttribute("ParentID") == "PumpkinTycoon")
-                        if isTycoon and brk.position then
-                            sumPos = sumPos + brk.position
-                            count = count + 1
-                        end
-                    end
-                    if count > 0 then
-                        basePos = sumPos / count
-                    end
-                end
-            end
-        end)
-    end
-
-    if not basePos then return nil end
-
-    -- 2. AUTO-SNAP: Kiểm tra mật độ quặng xung quanh basePos
-    -- Nếu basePos rơi vào bãi đất trống (không có quặng nào trong vòng 35 studs),
-    -- tự động tìm tâm của cụm quặng gần nhất của bãi hiện tại (trong cự ly 120 studs) để kéo nhân vật vào tâm farm!
-    pcall(function()
-        if BreakableFrontend and type(BreakableFrontend.AllByInstanceAndClass) == "function" then
-            local ok, normals = pcall(BreakableFrontend.AllByInstanceAndClass, "Normal")
-            if ok and type(normals) == "table" then
-                local nearbyCount = 0
-                local clusterSum = Vector3.zero
-                local clusterCount = 0
-                for k, v in pairs(normals) do
-                    local brk = getBrkData(k, v)
-                    local isTycoon = (brk.parentID == "PumpkinTycoon") or (brk.model and brk.model:GetAttribute("ParentID") == "PumpkinTycoon")
-                    if isTycoon and brk.position then
-                        local d = (brk.position - basePos).Magnitude
-                        if d <= 35 then
-                            nearbyCount = nearbyCount + 1
-                        end
-                        if d <= 120 then
-                            clusterSum = clusterSum + brk.position
-                            clusterCount = clusterCount + 1
-                        end
-                    end
-                end
-                -- Nếu vị trí đứng không có quặng nào nhưng gần đó có cụm quặng (>= 3 quặng)
-                if nearbyCount == 0 and clusterCount >= 3 then
-                    local avgCenter = clusterSum / clusterCount
-                    basePos = Vector3.new(avgCenter.X, basePos.Y, avgCenter.Z)
-                end
-            end
-        end
-    end)
-
-    return basePos
+    -- Trực tiếp chuyển đổi Relative Offset qua ma trận xoay của Plot, giữ nguyên 100% toạ độ đã lưu
+    return plotPivot:PointToWorldSpace(areaData.offset)
 end
 
 function TycoonFarm.ensureAutoFarmEnabled(state, sweetPos)
@@ -650,22 +625,6 @@ end
 -- =========================================================================
 -- 4. TRUY TÌM VÀ PHÁ BÍ NGÔ KHỔNG LỒ (BIG PUMPKIN) ƯU TIÊN CAO NHẤT
 -- =========================================================================
-
-local function getBrkData(k, v)
-    local brkObj = (type(v) == "table" and v) or (type(k) == "table" and k) or {}
-    local uid = brkObj.uid or (type(k) == "string" and k) or (type(v) == "string" and v) or (brkObj.model and brkObj.model.Name)
-    local model = brkObj.model or (typeof(v) == "Instance" and v) or (typeof(k) == "Instance" and k)
-    local parentID = brkObj.parentID or (model and model:GetAttribute("ParentID"))
-    local pos = brkObj.position or (model and model:GetPivot().Position) or (brkObj.GetPosition and brkObj:GetPosition())
-    local clientAttrs = brkObj.clientAttributes or (model and model:GetAttributes()) or {}
-    return {
-        uid = uid,
-        model = model,
-        parentID = parentID,
-        position = pos,
-        clientAttributes = clientAttrs,
-    }
-end
 
 local function getPlayerPets()
     local pets = {}
