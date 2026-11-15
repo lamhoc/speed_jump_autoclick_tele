@@ -7,8 +7,9 @@
 local genv = (type(getgenv) == "function" and getgenv()) or _G
 
 local Config = {
-    -- Cài đặt chung & Hiệu năng (BẢN TEST TRỰC QUAN - KHÔNG OPTIMIZE)
+    -- Cài đặt chung & Hiệu năng (BẢN TEST DELTA - ẨN GUI HOÀN TOÀN, KHÔNG OPTIMIZE)
     Enabled = true,
+    ShowGui = false,            -- [DELTA]: Ẩn hoàn toàn GUI bảng điều khiển trên màn hình theo yêu cầu của dj
     CPUSaver = false,           -- [BẢN TEST]: Tắt CPU Saver để quan sát nhân vật, pet và hiệu ứng 3D
     TargetFPS = 60,             -- FPS mượt mà 60 FPS
     Blackout = false,           -- Tắt màn hình đen

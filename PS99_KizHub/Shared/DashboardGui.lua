@@ -123,7 +123,29 @@ function DashboardGui.create(config)
                 RunService:Set3dRenderingEnabled(true)
             end
         end)
-        return nil
+        local function makeDummy()
+            local t = {}
+            return setmetatable(t, {
+                __index = function(_, k)
+                    if k == "QuestRows" then
+                        local rows = {}
+                        for i = 1, 10 do
+                            table.insert(rows, {
+                                Row = makeDummy(),
+                                Stars = makeDummy(),
+                                Name = makeDummy(),
+                                ProgText = makeDummy(),
+                                BarFill = makeDummy(),
+                            })
+                        end
+                        return rows
+                    end
+                    return makeDummy()
+                end,
+                __newindex = function() end,
+            })
+        end
+        return makeDummy()
     end
 
     local titleRaw = config.Title or "Kiz Hub"

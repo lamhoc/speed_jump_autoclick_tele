@@ -283,16 +283,30 @@ local function ensureInPumpkinTycoon()
 end
 
 -- =========================================================================
--- 4. KHỞI TẠO DASHBOARD GUI THEO DÕI THỜI GIAN THỰC
+-- 4. KHỞI TẠO DASHBOARD GUI THEO DÕI THỜI GIAN THỰC (TỰ ĐỘNG ẨN KHI SHOWGUI = FALSE)
 -- =========================================================================
 
 local ui = DashboardGui.create({
     Mode = "Tycoon",
+    ShowGui = (Config.ShowGui ~= false),
     BadgeTitle = "🎃 Kiz Hub | Pumpkin Patch Tycoon",
     OnClose = function()
         state.alive = false
     end,
 })
+
+if Config.ShowGui == false then
+    DashboardGui.destroy()
+    pcall(function()
+        local pgui = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if pgui then
+            for _, name in ipairs({ "KizHubUltraBlackout", "KizHub_Blackout_Dashboard", "FrostHub_BlackScreen", "Kizhub_BlackScreen" }) do
+                local b = pgui:FindFirstChild(name)
+                if b then b:Destroy() end
+            end
+        end
+    end)
+end
 
 task.spawn(function()
     while state.alive do
