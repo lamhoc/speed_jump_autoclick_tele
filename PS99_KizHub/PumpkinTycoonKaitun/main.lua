@@ -48,9 +48,9 @@ local DEFAULT_CONFIG = {
     PetSpeedMultiplier = 999,       -- Target speedMult (PetRendering multiplies petSpeed * petSpeedMult)
     FarmOrchardAndHay = true,
     AutoCollectOrbs = true,         -- Collects both Orbs and Lootbags from __THINGS.Orbs via "Orbs: Collect"
-    TapInterval = 0.04,             -- Fast tap cadence when breakable is inside reach
-    FarmLoopInterval = 0.10,        -- Pet & movement target refresh interval
-    OrbSweepInterval = 0.10,
+    TapInterval = 0.08,             -- Fast tap cadence when breakable is inside reach
+    FarmLoopInterval = 0.25,        -- Pet & movement target refresh interval
+    OrbSweepInterval = 0.35,
 
     -- Keep / Lock / Stock / Merchant (A2: Mua TẤT CẢ Pumpkin & ĐẬP HẾT)
     BreakAllPumpkins = true,         -- Mua tất cả các loại bí ngô và ĐẬP SẠCH (không khóa giữ bí)
@@ -2517,43 +2517,63 @@ local function FireOrbsCollect(batch)
     end
 end
 
+local lastLootbagSweep = 0
 local function SweepDrops()
     if not Config.AutoCollectOrbs then
         return
     end
     local things = Workspace:FindFirstChild("__THINGS")
-    local orbsFolder = things and things:FindFirstChild("Orbs")
-    if not orbsFolder then
-        return
+    if not things then return end
+
+    -- A. Orbs (Thu thập bằng ID trực tiếp, không thao tác vật lý CFrame để tối ưu CPU)
+    local orbsFolder = things:FindFirstChild("Orbs")
+    if orbsFolder then
+        local orbIds = {}
+        local seen = {}
+        for _, orb in ipairs(orbsFolder:GetChildren()) do
+            local rawId = orb:GetAttribute("OrbID") or orb:GetAttribute("id") or orb.Name
+            local numId = tonumber(rawId)
+            if numId and not seen[numId] then
+                seen[numId] = true
+                table.insert(orbIds, numId)
+                if #orbIds >= 50 then
+                    FireOrbsCollect(orbIds)
+                    orbIds = {}
+                end
+            end
+        end
+        if #orbIds > 0 then
+            FireOrbsCollect(orbIds)
+        end
     end
 
-    local _, hrp = GetCharacter()
-    local orbIds = {}
-    local seen = {}
-    for _, orb in ipairs(orbsFolder:GetChildren()) do
-        local rawId = orb:GetAttribute("OrbID") or orb:GetAttribute("id") or orb.Name
-        local numId = tonumber(rawId)
-        if numId and not seen[numId] then
-            seen[numId] = true
-            table.insert(orbIds, numId)
-        end
-        if hrp then
-            pcall(function()
-                if orb:IsA("BasePart") then
-                    orb.CFrame = hrp.CFrame
-                elseif orb:IsA("Model") then
-                    orb:PivotTo(hrp.CFrame)
+    -- B. Lootbags (Gom và claim theo batch 25 túi mỗi 0.5s)
+    local now = os.clock()
+    if now - lastLootbagSweep >= 0.5 then
+        lastLootbagSweep = now
+        local lootbagsFolder = things:FindFirstChild("Lootbags")
+        if lootbagsFolder then
+            local bagIds = {}
+            for _, bag in ipairs(lootbagsFolder:GetChildren()) do
+                local uid = bag:GetAttribute("UID") or bag.Name
+                table.insert(bagIds, uid)
+                if #bagIds >= 25 then
+                    pcall(function()
+                        if Modules.Network then
+                            Modules.Network.Fire("Lootbags_Claim", bagIds)
+                        end
+                    end)
+                    bagIds = {}
                 end
-            end)
+            end
+            if #bagIds > 0 then
+                pcall(function()
+                    if Modules.Network then
+                        Modules.Network.Fire("Lootbags_Claim", bagIds)
+                    end
+                end)
+            end
         end
-        if #orbIds >= 50 then
-            local batch = orbIds
-            orbIds = {}
-            FireOrbsCollect(batch)
-        end
-    end
-    if #orbIds > 0 then
-        FireOrbsCollect(orbIds)
     end
 end
 
@@ -2888,10 +2908,14 @@ local function GetBoostTimerSeconds(boostId)
     return (ok and type(sec) == "number") and sec or 0
 end
 
+local lastBoostSweep = 0
 local function StepConsumableBoosts()
     if not Config.AutoConsumeBoosts or not Modules.PumpkinBoostsUtil or not Modules.Save or not Modules.Network then
         return
     end
+    local now = os.clock()
+    if now - lastBoostSweep < 5.0 then return end
+    lastBoostSweep = now
     local okSave, saveData = pcall(Modules.Save.Get)
     local consumables = okSave and saveData and saveData.Inventory and saveData.Inventory.Consumable
     if type(consumables) ~= "table" then
@@ -4712,6 +4736,21 @@ local function StepAutoBuffs()
 end
 
 -- 3. BẢNG GUI MINI THEO DÕI TRỰC QUAN (SIÊU NHẸ CHO 80 ACC)
+local function ShortenNumber(val)
+    local n = tonumber(val) or 0
+    if n >= 1e12 then
+        return string.format("%.2fT", n / 1e12)
+    elseif n >= 1e9 then
+        return string.format("%.2fB", n / 1e9)
+    elseif n >= 1e6 then
+        return string.format("%.2fM", n / 1e6)
+    elseif n >= 1e3 then
+        return string.format("%.1fK", n / 1e3)
+    else
+        return tostring(math.floor(n))
+    end
+end
+
 local MiniGuiState = {
     ScreenGui = nil,
     CoinsLabel = nil,
@@ -4720,6 +4759,49 @@ local MiniGuiState = {
     PhaseLabel = nil,
     MailLabel = nil,
 }
+
+local function UpdateMiniGui()
+    if not MiniGuiState.ScreenGui or not MiniGuiState.ScreenGui.Parent then return end
+
+    local ok, err = pcall(function()
+        local coins = Runtime.Stats.Coins or 0
+        local tokens = GetCurrency((PT and PT.TOKEN) or "PumpkinTokens") or 0
+        local hatched = Runtime.Stats.EggsHatched or 0
+        local gifts = Runtime.Stats.GiftsOpened or 0
+        local phase = Runtime.Stats.Phase or "Đang chạy..."
+        local mailStat = (MailState and MailState.Status) or "Rảnh"
+        local nextBtn = Runtime.Stats.NextButtonName or "Đang quét..."
+        local missing = Runtime.Stats.MissingCoins or 0
+        local cost = Runtime.Stats.NextButtonCost or 0
+
+        if MiniGuiState.CoinsLabel then
+            MiniGuiState.CoinsLabel.Text = string.format("💰 Coins: %s • 🎟️ Tokens: %s", ShortenNumber(coins), ShortenNumber(tokens))
+        end
+        if MiniGuiState.ButtonLabel then
+            if nextBtn == "Đã xong tất cả" then
+                MiniGuiState.ButtonLabel.Text = "🔘 Nút: Hoàn thành 100% tất cả!"
+            elseif missing > 0 then
+                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s (Thiếu %s)", tostring(nextBtn), ShortenNumber(missing))
+            elseif cost > 0 then
+                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s (Đủ tiền mua!)", tostring(nextBtn))
+            else
+                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s", tostring(nextBtn))
+            end
+        end
+        if MiniGuiState.HatchLabel then
+            MiniGuiState.HatchLabel.Text = string.format("🥚 Hatched: %s • 🎁 Gifts: %s", ShortenNumber(hatched), ShortenNumber(gifts))
+        end
+        if MiniGuiState.PhaseLabel then
+            MiniGuiState.PhaseLabel.Text = string.format("📌 %s", tostring(phase))
+        end
+        if MiniGuiState.MailLabel then
+            MiniGuiState.MailLabel.Text = string.format("📦 Mail: %s", tostring(mailStat))
+        end
+    end)
+    if not ok then
+        Log("DEBUG", "UpdateMiniGui error: %s", tostring(err))
+    end
+end
 
 local function SetupMiniGui()
     if Config.ShowGui == false then return end
@@ -4780,6 +4862,7 @@ local function SetupMiniGui()
         title.TextSize = 11
         title.Font = Enum.Font.GothamBold
         title.TextXAlignment = Enum.TextXAlignment.Left
+        title.AutoLocalize = false
         title.Parent = f
 
         -- Nút bấm bật/tắt 3D Saver trực tiếp trên GUI để tiện quan sát
@@ -4793,6 +4876,7 @@ local function SetupMiniGui()
         toggle3D.TextSize = 10
         toggle3D.Font = Enum.Font.GothamBold
         toggle3D.BorderSizePixel = 0
+        toggle3D.AutoLocalize = false
         toggle3D.Parent = f
 
         local btnCorner = Instance.new("UICorner")
@@ -4817,7 +4901,7 @@ local function SetupMiniGui()
             end)
         end)
 
-        local function makeLabel(yPos, color)
+        local function makeLabel(yPos, color, defaultText)
             local l = Instance.new("TextLabel")
             l.Size = UDim2.new(1, -16, 0, 16)
             l.Position = UDim2.new(0, 10, 0, yPos)
@@ -4826,65 +4910,25 @@ local function SetupMiniGui()
             l.TextSize = 10
             l.Font = Enum.Font.GothamMedium
             l.TextXAlignment = Enum.TextXAlignment.Left
+            l.AutoLocalize = false -- CHỐNG LỖI TỰ ĐỘNG DỊCH THÀNH "Nhãn" CỦA ROBLOX
+            l.Text = defaultText or "..."
             l.Parent = f
             return l
         end
 
-        MiniGuiState.CoinsLabel = makeLabel(24, Color3.fromRGB(251, 191, 36))
-        MiniGuiState.ButtonLabel = makeLabel(42, Color3.fromRGB(244, 114, 182))
-        MiniGuiState.HatchLabel = makeLabel(60, Color3.fromRGB(168, 85, 247))
-        MiniGuiState.PhaseLabel = makeLabel(78, Color3.fromRGB(56, 189, 248))
-        MiniGuiState.MailLabel = makeLabel(96, Color3.fromRGB(52, 211, 153))
+        MiniGuiState.CoinsLabel = makeLabel(24, Color3.fromRGB(251, 191, 36), "💰 Coins: 0 • 🎟️ Tokens: 0")
+        MiniGuiState.ButtonLabel = makeLabel(42, Color3.fromRGB(244, 114, 182), "🔘 Nút: Đang quét...")
+        MiniGuiState.HatchLabel = makeLabel(60, Color3.fromRGB(168, 85, 247), "🥚 Hatched: 0 • 🎁 Gifts: 0")
+        MiniGuiState.PhaseLabel = makeLabel(78, Color3.fromRGB(56, 189, 248), "📌 Khởi động...")
+        MiniGuiState.MailLabel = makeLabel(96, Color3.fromRGB(52, 211, 153), "📦 Mail: Sẵn sàng")
 
         sg.Parent = parentTarget
         MiniGuiState.ScreenGui = sg
+
+        -- Cập nhật tức thì ngay frame đầu tiên
+        task.defer(UpdateMiniGui)
     end)
 end
-
-local lastGuiUpdate = 0
-local function UpdateMiniGui()
-    if not MiniGuiState.ScreenGui or not MiniGuiState.ScreenGui.Parent then return end
-    local now = os.clock()
-    if now - lastGuiUpdate < 1.0 then return end
-    lastGuiUpdate = now
-
-    pcall(function()
-        local coins = Runtime.Stats.Coins or 0
-        local tokens = GetCurrency((PT and PT.TOKEN) or "PumpkinTokens") or 0
-        local hatched = Runtime.Stats.EggsHatched or 0
-        local gifts = Runtime.Stats.GiftsOpened or 0
-        local phase = Runtime.Stats.Phase or "Đang chạy..."
-        local mailStat = (MailState and MailState.Status) or "Rảnh"
-        local nextBtn = Runtime.Stats.NextButtonName or "..."
-        local missing = Runtime.Stats.MissingCoins or 0
-        local cost = Runtime.Stats.NextButtonCost or 0
-
-        if MiniGuiState.CoinsLabel then
-            MiniGuiState.CoinsLabel.Text = string.format("💰 Coins: %s • 🎟️ Tokens: %s", ShortenNumber(coins), ShortenNumber(tokens))
-        end
-        if MiniGuiState.ButtonLabel then
-            if nextBtn == "Đã xong tất cả" then
-                MiniGuiState.ButtonLabel.Text = "🔘 Nút: Hoàn thành 100% tất cả!"
-            elseif missing > 0 then
-                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s (Thiếu %s)", tostring(nextBtn), ShortenNumber(missing))
-            elseif cost > 0 then
-                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s (Đủ tiền mua!)", tostring(nextBtn))
-            else
-                MiniGuiState.ButtonLabel.Text = string.format("🔘 Nút: %s", tostring(nextBtn))
-            end
-        end
-        if MiniGuiState.HatchLabel then
-            MiniGuiState.HatchLabel.Text = string.format("🥚 Hatched: %s • 🎁 Gifts: %s", ShortenNumber(hatched), ShortenNumber(gifts))
-        end
-        if MiniGuiState.PhaseLabel then
-            MiniGuiState.PhaseLabel.Text = string.format("📌 %s", tostring(phase))
-        end
-        if MiniGuiState.MailLabel then
-            MiniGuiState.MailLabel.Text = string.format("📦 Mail: %s", tostring(mailStat))
-        end
-    end)
-end
-
 -- ============================================================================
 -- 13. MAIN CONCURRENT LOOPS
 -- ============================================================================
@@ -4918,16 +4962,15 @@ local function StartLoops()
                 StepEventPass()
                 StepFreeGifts()
                 StepAutoBuffs()
-                UpdateMiniGui()
             end)
             if not ok then
                 Log("DEBUG", "Manager loop error: %s", tostring(err))
             end
-            task.wait(0.20)
+            task.wait(0.25)
         end
     end)
 
-    -- Loop B: Target Selector & Pet Assignment (fast 30ms retarget on break, full rescan on FarmLoopInterval)
+    -- Loop B: Target Selector & Pet Assignment (Thông minh, chỉ quét lại khi mục tiêu vỡ hoặc sau 0.25s)
     task.spawn(function()
         Log("INFO", "Farm targeting and pet focus loop started.")
         local lastTargetScan = 0
@@ -4937,7 +4980,7 @@ local function StartLoops()
                 or (not activeFarmTarget.model)
                 or (not activeFarmTarget.model.Parent)
             local waitingSpawn = (Runtime.Stats.ActiveTargetDesc == "Waiting spawn")
-            local dueForScan = (now - lastTargetScan) >= (Config.FarmLoopInterval or 0.10)
+            local dueForScan = (now - lastTargetScan) >= (targetDead and 0.05 or (Config.FarmLoopInterval or 0.25))
             if (targetDead and not waitingSpawn) or dueForScan then
                 lastTargetScan = now
                 pcall(function()
@@ -4949,25 +4992,25 @@ local function StartLoops()
                     end
                 end)
             end
-            task.wait(0.03)
+            task.wait(0.06)
         end
     end)
 
-    -- Loop C: Ultra-Fast Tap Engine
+    -- Loop C: Ultra-Fast Tap Engine (Đã tối ưu 12.5 taps/s để tiết kiệm CPU và socket mạng)
     task.spawn(function()
         Log("INFO", "Rapid tap loop started.")
         while IsRunning() do
             pcall(StepRapidTap)
-            task.wait(Config.TapInterval or 0.04)
+            task.wait(Config.TapInterval or 0.08)
         end
     end)
 
-    -- Loop D: Orbs & Lootbags Sweeper
+    -- Loop D: Orb and lootbag sweep loop (Đã tối ưu quét theo batch mỗi 0.35s)
     task.spawn(function()
         Log("INFO", "Orb and lootbag sweep loop started.")
         while IsRunning() do
             pcall(SweepDrops)
-            task.wait(Config.OrbSweepInterval or 0.12)
+            task.wait(Config.OrbSweepInterval or 0.35)
         end
     end)
 
@@ -5001,8 +5044,15 @@ local function StartLoops()
             task.wait(30)
         end
     end)
-end
 
+    -- Loop G: MiniGui Heartbeat (Chạy độc lập mỗi 1.0s, không bao giờ bị nghẽn bởi game loop)
+    task.spawn(function()
+        while IsRunning() do
+            pcall(UpdateMiniGui)
+            task.wait(1.0)
+        end
+    end)
+end
 -- ============================================================================
 -- 14. ENTRYPOINT
 -- ============================================================================
