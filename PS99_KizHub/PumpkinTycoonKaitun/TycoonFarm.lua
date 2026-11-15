@@ -909,26 +909,86 @@ function TycoonFarm.runAutoTapTick()
     end
 end
 
+local orbMapCache = nil
+function TycoonFarm.findOrbMap()
+    if type(orbMapCache) == "table" then return orbMapCache end
+    pcall(function()
+        local mod = ReplicatedStorage:FindFirstChild("Library") and ReplicatedStorage.Library:FindFirstChild("Client") and ReplicatedStorage.Library.Client:FindFirstChild("OrbCmds")
+        if not mod or type(getsenv) ~= "function" then return end
+        local env = getsenv(mod)
+        local fn = type(env) == "table" and env.ProcessCreate or nil
+        if type(fn) ~= "function" and type(getgc) == "function" then
+            for _, f in ipairs(getgc(false)) do
+                if type(f) == "function" and debug.info(f, "n") == "ProcessCreate" then
+                    fn = f
+                    break
+                end
+            end
+        end
+        if type(fn) ~= "function" then return end
+        for _, up in pairs(debug.getupvalues(fn)) do
+            if type(up) == "table" then
+                local strKeys = false
+                for k in pairs(up) do
+                    if type(k) == "string" then
+                        strKeys = true
+                        break
+                    end
+                end
+                if not strKeys then
+                    orbMapCache = up
+                    return
+                end
+            end
+        end
+    end)
+    return orbMapCache
+end
+
 function TycoonFarm.collectOrbsTick()
     pcall(function()
+        -- 1. HÚT ORBS TỨC THÌ TỪ BỘ NHỚ CLIENT QUA ORBCMDS (KHÔNG CHỜ RƠI XUỐNG SÀN)
+        local map = TycoonFarm.findOrbMap()
+        if type(map) == "table" then
+            local now = workspace:GetServerTimeNow()
+            for _, orb in pairs(map) do
+                if type(orb) == "table" and not orb._collected and not orb._destroyed and type(orb.Collect) == "function" then
+                    local age = now - (tonumber(orb._timestamp) or now)
+                    if age >= (tonumber(orb._pickupDelay) or 0) then
+                        pcall(orb.Collect, orb, nil, nil, true)
+                    end
+                end
+            end
+        end
+
+        -- 2. HÚT SẠCH TOÀN BỘ ORBS VẬT LÝ TRÊN SÀN (CHIA MẺ 80-100 CÁI/LẦN, KHÔNG SÓT HẠT NÀO)
         local things = workspace:FindFirstChild("__THINGS")
         local orbs = things and things:FindFirstChild("Orbs")
-        if orbs and #orbs:GetChildren() > 0 then
+        if orbs then
             local ids = {}
             for _, orb in ipairs(orbs:GetChildren()) do
-                table.insert(ids, tonumber(orb.Name) or orb.Name)
-                if #ids >= 40 then break end
+                local id = tonumber(orb.Name) or orb.Name
+                table.insert(ids, id)
+                if #ids >= 80 then
+                    Network.netFire("Orbs: Collect", ids)
+                    ids = {}
+                end
             end
             if #ids > 0 then
                 Network.netFire("Orbs: Collect", ids)
             end
         end
+
+        -- 3. HÚT SẠCH TOÀN BỘ LOOTBAGS RƠI TRÊN SÀN
         local lootbags = things and things:FindFirstChild("Lootbags")
-        if lootbags and #lootbags:GetChildren() > 0 then
+        if lootbags then
             local uids = {}
             for _, lb in ipairs(lootbags:GetChildren()) do
                 table.insert(uids, lb.Name)
-                if #uids >= 25 then break end
+                if #uids >= 40 then
+                    Network.netFire("Lootbags_Claim", uids)
+                    uids = {}
+                end
             end
             if #uids > 0 then
                 Network.netFire("Lootbags_Claim", uids)

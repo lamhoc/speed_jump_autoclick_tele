@@ -466,7 +466,7 @@ task.spawn(function()
     end
 end)
 
--- LUỒNG 2: Mua nút Tycoon (Cheapest First) & Hút Orbs / Lootbags
+-- LUỒNG 2: Mua nút Tycoon (Cheapest First)
 task.spawn(function()
     while state.alive do
         pcall(function()
@@ -477,9 +477,20 @@ task.spawn(function()
 
             -- Tự động mua nút rẻ nhất khi đủ Patch Coins
             TycoonFarm.checkAndBuyButtons(state)
-            TycoonFarm.collectOrbsTick()
         end)
         task.wait(Config.ButtonBuyInterval or 2.0)
+    end
+end)
+
+-- LUỒNG 2B: Hút Orbs & Lootbags siêu tốc (0.4s - Sạch 100% sàn, không sót hạt nào)
+task.spawn(function()
+    while state.alive do
+        pcall(function()
+            if Config.Enabled and ensureInPumpkinTycoon() then
+                TycoonFarm.collectOrbsTick()
+            end
+        end)
+        task.wait(0.4)
     end
 end)
 
