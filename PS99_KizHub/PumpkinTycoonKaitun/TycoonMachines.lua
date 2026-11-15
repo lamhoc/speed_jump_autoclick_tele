@@ -473,16 +473,25 @@ local function runFlannelGifts(plot)
                             local am = tonumber(item._am or item.Amount or item.am or 1) or 1
                             local count = math.clamp(am, 1, 100)
 
-                            -- Mở quà chạy ngầm 100% qua Server (KHÔNG mở UI/Túi đồ client để chống lag)
-                            if plot then
-                                pcall(function()
-                                    plot:Invoke(K.VERBS.OpenGift or "KX_Release", uid, count)
-                                end)
+                            -- Mở quà chuẩn xác 100% theo chữ ký LootboxCmds.Open & Remote YR_Hydrate đã bắt được từ game
+                            local itemObj = {
+                                class = item.Class or cat or "Lootbox",
+                                data = { id = item.id or "Flannel Gift" },
+                                uid = uid,
+                            }
+
+                            local LootboxCmds = safeRequire({ "Library", "Client", "LootboxCmds" })
+                            local opened = false
+                            if LootboxCmds and type(LootboxCmds.Open) == "function" then
+                                local okLb = pcall(LootboxCmds.Open, itemObj, count)
+                                if okLb then opened = true end
                             end
 
-                            pcall(function()
-                                Network.netInvoke("Lootbox: Open", uid, count)
-                            end)
+                            if not opened then
+                                pcall(function()
+                                    Network.netInvoke("YR_Hydrate", uid, count, {})
+                                end)
+                            end
 
                             task.wait(0.2)
                             pcall(function()

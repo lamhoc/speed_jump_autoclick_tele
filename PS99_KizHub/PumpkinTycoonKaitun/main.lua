@@ -206,7 +206,7 @@ task.spawn(function()
         pcall(function()
             local pgui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
             if pgui then
-                for _, name in ipairs({ "Inventory", "Lootbox", "GiftOpening", "CardOpening", "Rewards" }) do
+                for _, name in ipairs({ "Inventory", "Lootbox", "GiftOpening", "CardOpening", "Rewards", "BuyMultiple", "LootboxOpening" }) do
                     local g = pgui:FindFirstChild(name)
                     if g and g:IsA("ScreenGui") and g.Enabled then
                         g.Enabled = false
