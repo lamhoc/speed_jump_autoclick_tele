@@ -348,18 +348,8 @@ function EggHatch.hatchBestEggTick(state)
 
     state.currentEggName = targetEgg.eggName or "Cocoa Cabin Egg"
 
-    -- Đảm bảo nhân vật ở tại phạm vi mở trứng (trong vòng 30 studs) NGAY TỪ ĐẦU
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp and targetEgg.pos and (hrp.Position - targetEgg.pos).Magnitude > 30 then
-        pcall(function()
-            local safePos = targetEgg.pos + Vector3.new(0, 2.5, 6)
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.AssemblyAngularVelocity = Vector3.zero
-            char:PivotTo(CFrame.new(safePos, targetEgg.pos))
-            hrp.CFrame = CFrame.new(safePos, targetEgg.pos)
-        end)
-    end
+    -- Không teleport nhân vật đến bệ trứng để tránh tranh chấp vị trí với TycoonFarm (sweetPos).
+    -- Mở trứng Custom qua Network Invoke không yêu cầu đứng tại bệ trứng, giúp nhân vật luôn đứng vững tại bãi farm đập quặng và hút orbs.
 
     local eggCost = EGG_UNIT_COSTS[targetEgg.zoneIndex or 1] or 200
     if coins < eggCost then return end

@@ -137,7 +137,7 @@ end
 -- 1. TRUY VẤN PLOT VÀ MÔ HÌNH ĐẢO CỦA NGƯỜI CHƠI
 -- =========================================================================
 
-local hasAttemptedIslandInit = false
+local lastIslandInitAttempt = 0
 
 function TycoonFarm.getPlot()
     initGameLibs()
@@ -152,9 +152,10 @@ function TycoonFarm.getPlot()
         if ok and plot then return plot end
     end
 
-    -- Nếu cả ClientPlot và IslandCmds.Plot() đều nil: gọi OnJoin / GetTeleport một lần để client khởi tạo ClientPlot
-    if not hasAttemptedIslandInit and IslandCmds then
-        hasAttemptedIslandInit = true
+    -- Thử kích hoạt đảo qua IslandCmds nếu client chưa khởi tạo (throttle 3s)
+    local now = os.clock()
+    if (now - lastIslandInitAttempt >= 3) and IslandCmds then
+        lastIslandInitAttempt = now
         pcall(function()
             if type(IslandCmds.OnJoin) == "function" then
                 IslandCmds.OnJoin()
@@ -175,13 +176,13 @@ function TycoonFarm.getPlot()
         end
     end
 
-    -- Fallback 1: tìm trong workspace.__THINGS.Plots theo UserId hoặc Player
+    -- Fallback 1: tìm trong workspace.__THINGS.Plots theo UserId hoặc Player / OwnerUsername
     local things = workspace:FindFirstChild("__THINGS")
     local plots = things and (things:FindFirstChild("Plots") or things:FindFirstChild("PumpkinTycoonPlots") or things:FindFirstChild("TycoonPlots"))
     if plots and LocalPlayer then
         for _, p in ipairs(plots:GetChildren()) do
-            local owner = p:GetAttribute("Owner") or p:GetAttribute("UserId") or p:GetAttribute("Player") or p:GetAttribute("OwnerId")
-            if owner and (owner == LocalPlayer.UserId or owner == LocalPlayer.Name or tostring(owner) == tostring(LocalPlayer.UserId)) then
+            local owner = p:GetAttribute("Owner") or p:GetAttribute("OwnerUsername") or p:GetAttribute("UserId") or p:GetAttribute("Player") or p:GetAttribute("OwnerId")
+            if owner and (owner == LocalPlayer.UserId or owner == LocalPlayer.Name or tostring(owner) == tostring(LocalPlayer.UserId) or tostring(owner) == tostring(LocalPlayer.Name)) then
                 return p
             end
         end
@@ -233,8 +234,8 @@ function TycoonFarm.getPlotModel()
     if plot then
         if type(plot.GetModel) == "function" then
             local ok, m = pcall(plot.GetModel, plot)
-            if ok and m then return m end
-        elseif plot:IsA("Model") then
+            if ok and m and m:IsA("Model") then return m end
+        elseif typeof(plot) == "Instance" and plot:IsA("Model") then
             return plot
         end
     end
@@ -244,14 +245,14 @@ function TycoonFarm.getPlotModel()
         for _, folderName in ipairs({ "Plots", "PumpkinTycoonPlots", "TycoonPlots", "Tycoons" }) do
             local folder = things:FindFirstChild(folderName)
             if folder then
-                if type(plot.GetId) == "function" then
+                if plot and type(plot.GetId) == "function" then
                     local pId = tostring(plot:GetId())
                     if folder:FindFirstChild(pId) then return folder:FindFirstChild(pId) end
                 end
                 if LocalPlayer then
                     for _, p in ipairs(folder:GetChildren()) do
-                        local owner = p:GetAttribute("Owner") or p:GetAttribute("UserId") or p:GetAttribute("Player")
-                        if owner == LocalPlayer.UserId or owner == LocalPlayer.Name or tostring(owner) == tostring(LocalPlayer.UserId) then
+                        local owner = p:GetAttribute("Owner") or p:GetAttribute("OwnerUsername") or p:GetAttribute("UserId") or p:GetAttribute("Player")
+                        if owner and (owner == LocalPlayer.UserId or owner == LocalPlayer.Name or tostring(owner) == tostring(LocalPlayer.UserId) or tostring(owner) == tostring(LocalPlayer.Name)) then
                             return p
                         end
                     end
@@ -294,7 +295,9 @@ function TycoonFarm.moveTo(targetPosOrCF)
         hrp.CFrame = cf
     end)
     pcall(function()
-        Network.teleportTo(targetPos)
+        if Network and type(Network.teleportTo) == "function" then
+            Network.teleportTo(cf)
+        end
     end)
 end
 
@@ -304,37 +307,34 @@ end
 
 function TycoonFarm.getPlotPivot()
     local plot = TycoonFarm.getPlot()
-    -- 1. Ưu tiên cao nhất: plot:GetCFrame() (vì toàn bộ 5 offset FARM_AREAS được lưu theo hệ toạ độ này)
+    -- 1. Ưu tiên tuyệt đối: plot:GetModel():GetPivot() (khớp 100% logic get_pos.lua đo 5 bãi farm)
     if plot then
-        if type(plot.GetCFrame) == "function" then
-            local ok, cf = pcall(plot.GetCFrame, plot)
-            if ok and typeof(cf) == "CFrame" and cf.Position.Magnitude > 0 then
-                return cf
+        if type(plot.GetModel) == "function" then
+            local okM, m = pcall(plot.GetModel, plot)
+            if okM and m and m:IsA("Model") then
+                return m:GetPivot()
             end
-        elseif typeof(plot) == "Instance" and plot:IsA("Model") then
-            if plot.PrimaryPart then
-                return plot.PrimaryPart.CFrame
-            end
-            local okP, pcf = pcall(function() return plot:GetPivot() end)
-            if okP and typeof(pcf) == "CFrame" and pcf.Position.Magnitude > 0 then
-                return pcf
-            end
+        end
+        if typeof(plot) == "Instance" and plot:IsA("Model") then
+            return plot:GetPivot()
         end
     end
 
-    -- 2. Fallback: plotModel.PrimaryPart.CFrame rồi plotModel:GetPivot()
+    -- 2. Fallback: plotModel:GetPivot()
     local plotModel = TycoonFarm.getPlotModel()
-    if plotModel and typeof(plotModel) == "Instance" then
-        if plotModel.PrimaryPart then
-            return plotModel.PrimaryPart.CFrame
-        end
-        local okP, pcf = pcall(function() return plotModel:GetPivot() end)
-        if okP and typeof(pcf) == "CFrame" and pcf.Position.Magnitude > 0 then
-            return pcf
+    if plotModel and typeof(plotModel) == "Instance" and plotModel:IsA("Model") then
+        return plotModel:GetPivot()
+    end
+
+    -- 3. Fallback: plot:GetCFrame()
+    if plot and type(plot.GetCFrame) == "function" then
+        local ok, cf = pcall(plot.GetCFrame, plot)
+        if ok and typeof(cf) == "CFrame" and cf.Position.Magnitude > 0 then
+            return cf
         end
     end
 
-    -- 3. Fallback: tìm trong workspace.__THINGS.Plots model có SpawnPosition gần nhất
+    -- 4. Fallback: tìm trong workspace.__THINGS.Plots model có SpawnPosition gần nhất
     local things = workspace:FindFirstChild("__THINGS")
     local plots = things and (things:FindFirstChild("Plots") or things:FindFirstChild("PumpkinTycoonPlots") or things:FindFirstChild("TycoonPlots"))
     if plots then
@@ -350,7 +350,7 @@ function TycoonFarm.getPlotPivot()
                 local dist = (pPos - myPos).Magnitude
                 if dist < closestDist then
                     closestDist = dist
-                    closestCf = p.PrimaryPart and p.PrimaryPart.CFrame or p:GetPivot()
+                    closestCf = p:GetPivot()
                 end
             end
         end
@@ -1345,7 +1345,18 @@ function TycoonFarm.checkAndBuyButtons(state)
 
     local affordable = {}
     for _, item in ipairs(candidates) do
-        if item.rank == 1 or not hasRank1 or item.price <= math.max(minRank1Price * 0.25, coins * 0.35) then
+        local canBuy = false
+        if item.price <= coins then
+            if item.rank == 1 then
+                canBuy = true
+            elseif not hasRank1 or minRank1Price > coins then
+                -- Nếu không có nút Rank 1 nào mua nổi lúc này -> Mua mọi nút Rank 2/3 có giá <= coins để tiến tới 68/68 hoàn thành đảo
+                canBuy = true
+            elseif item.price <= math.max(minRank1Price * 0.35, coins * 0.5) then
+                canBuy = true
+            end
+        end
+        if canBuy then
             table.insert(affordable, item)
         end
     end
