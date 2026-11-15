@@ -335,6 +335,8 @@ function TycoonFarm.getActiveAreaIndex()
     return 1
 end
 
+local lastActiveAreaIndex = nil
+
 function TycoonFarm.getSweetPos()
     local areaIdx = TycoonFarm.getActiveAreaIndex()
     local areaData = FARM_AREAS[areaIdx] or FARM_AREAS[1]
@@ -417,6 +419,30 @@ function TycoonFarm.ensureAutoFarmEnabled(state, sweetPos)
                 Network.netFire("AutoFarm_LogPosition", sweetPos)
             end
             if state then state.autoFarmActive = true end
+        end
+    end)
+end
+
+function TycoonFarm.toggleAutoFarmReset(sweetPos)
+    pcall(function()
+        if not AutoFarmCmds then
+            AutoFarmCmds = safeRequire({ "Library", "Client", "AutoFarmCmds" })
+        end
+        -- 1. Tắt AutoFarm để hủy anchor mục tiêu quặng ở bãi cũ
+        if AutoFarmCmds and type(AutoFarmCmds.Disable) == "function" then
+            AutoFarmCmds.Disable()
+        end
+        pcall(function() Network.netInvoke("AutoFarm_Enable", false) end)
+
+        task.wait(0.2)
+
+        -- 2. Bật lại AutoFarm với tọa độ bãi mới
+        if AutoFarmCmds and type(AutoFarmCmds.Enable) == "function" then
+            AutoFarmCmds.Enable()
+        end
+        pcall(function() Network.netInvoke("AutoFarm_Enable", true) end)
+        if sweetPos then
+            pcall(function() Network.netFire("AutoFarm_LogPosition", sweetPos) end)
         end
     end)
 end
@@ -604,8 +630,16 @@ function TycoonFarm.farmBestPatchTick(state)
     local sweetPos = TycoonFarm.getSweetPos()
     if not sweetPos then return end
 
-    -- Kích hoạt Auto Farm miễn phí của event
-    TycoonFarm.ensureAutoFarmEnabled(state, sweetPos)
+    -- Phát hiện chuyển đổi bãi farm (ví dụ từ bãi 1 sang bãi 2, bãi 2 sang bãi 3...):
+    -- Tự động Tắt -> Chờ 0.2s -> Bật lại AutoFarm với tọa độ mới để giải phóng anchor quặng cũ của dàn Pet
+    local currentArea = TycoonFarm.getActiveAreaIndex()
+    if lastActiveAreaIndex ~= nil and lastActiveAreaIndex ~= currentArea then
+        TycoonFarm.toggleAutoFarmReset(sweetPos)
+    else
+        -- Kích hoạt Auto Farm miễn phí của event
+        TycoonFarm.ensureAutoFarmEnabled(state, sweetPos)
+    end
+    lastActiveAreaIndex = currentArea
 
     -- Luôn đảm bảo nhân vật đứng tại sweetPos của bãi farm hiện tại (nếu lệch quá 8 studs -> Teleport ngay)
     local char, hrp = getCharacterParts()

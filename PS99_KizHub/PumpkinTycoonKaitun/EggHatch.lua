@@ -286,6 +286,7 @@ local lastHatchAttempt = 0
 local hatchCycleCount = 0
 local waitingForButtonId = nil
 local waitingForButtonPrice = 0
+local zone5EggUnlockedTime = nil
 
 function EggHatch.onButtonBought(btnId)
     if not waitingForButtonId or waitingForButtonId == btnId then
@@ -347,18 +348,42 @@ function EggHatch.hatchBestEggTick(state)
     if coins < eggCost then return end
 
     -- =====================================================================
-    -- CƠ CHẾ CHU KỲ: MỞ EGG 3 LẦN -> CHECK NÚT RẺ NHẤT & NGƯNG MỞ EGG ĐỂ MUA
-    -- ĐẶC BIỆT: KHI ĐÃ ĐẠT EGG BÃI CUỐI (BÃI 5 GOLDEN GROVE) -> HATCH INFINITE LIÊN TỤC
+    -- CƠ CHẾ CHU KỲ & LOGIC TIẾN TRÌNH BÃI 5 (GOLDEN GROVE):
+    -- Giai đoạn 1: Khi vừa mở Bãi 5 -> Mở trứng liên tục trong 3 phút đầu để lấy dàn Pet mạnh gánh dame
+    -- Giai đoạn 2: Sau 3 phút -> Ngưng mở trứng hoàn toàn, tích 100% coin mua sạch nút để đạt 100% đảo
+    -- Giai đoạn 3: Khi đảo đã đạt 100% -> Chuyển sang Infinite Hatch vĩnh viễn
     -- =====================================================================
     local isFinalEgg = (targetEgg.zoneIndex or 1) >= 5
-    local infiniteFinal = (Config.Economy and Config.Economy.InfiniteHatchAtFinalEgg ~= false) and isFinalEgg
+    local infiniteFinal = false
     local maxCycles = (Config.Economy and Config.Economy.HatchCyclesBeforeButtonCheck) or 3
 
-    if infiniteFinal then
-        -- Khi đã tới quả trứng bãi cuối: Reset sạch cờ chờ và mở vô hạn không giới hạn
-        waitingForButtonId = nil
-        waitingForButtonPrice = 0
-        hatchCycleCount = 0
+    if isFinalEgg then
+        if not zone5EggUnlockedTime then
+            zone5EggUnlockedTime = os.clock()
+        end
+
+        local elapsedZone5 = os.clock() - zone5EggUnlockedTime
+        local prog = (TycoonFarm and type(TycoonFarm.getTycoonProgress) == "function" and TycoonFarm.getTycoonProgress()) or {}
+        local isIsland100 = (prog.completed == true) or ((prog.percent or 0) >= 1) or ((prog.totalButtons or 0) > 0 and (prog.ownedButtons or 0) >= (prog.totalButtons or 0))
+
+        if isIsland100 then
+            -- GIAI ĐOẠN 3: Đảo đã hoàn thành 100% -> Infinite Hatch vĩnh viễn
+            infiniteFinal = true
+            waitingForButtonId = nil
+            waitingForButtonPrice = 0
+            hatchCycleCount = 0
+        elseif elapsedZone5 <= 180 then
+            -- GIAI ĐOẠN 1: Trong 3 phút đầu khi vừa mở Bãi 5 -> Mở trứng liên tục kiếm pet mạnh
+            infiniteFinal = true
+            waitingForButtonId = nil
+            waitingForButtonPrice = 0
+            hatchCycleCount = 0
+        else
+            -- GIAI ĐOẠN 2: Sau 3 phút & đảo CHƯA đạt 100% -> TÍCH 100% COIN MUA SẠCH NÚT ĐỂ ĐẠT 100% ĐẢO
+            local percentVal = math.floor(((prog.percent or 0) * 100) * 10) / 10
+            state.hatchStatus = string.format("Tích coin hoàn thành 100%% đảo (%d/%d nút • %.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
+            return -- Ngưng mở trứng hoàn toàn để dành 100% coins cho TycoonFarm mua nút!
+        end
     else
         -- A. Nếu đang trong trạng thái chờ mua nút sau khi đã mở đủ 3 lần
         if waitingForButtonId then
@@ -438,7 +463,17 @@ function EggHatch.hatchBestEggTick(state)
     if infiniteFinal then
         -- Chế độ Infinite Hatch tại Bãi Cuối: Cứ có tiền là mở tối đa, không cần trích lập quỹ nút
         allowedHatch = math.clamp(math.floor(coins / eggCost), 1, accountMaxHatch)
-        state.hatchStatus = string.format("🥚 Infinite Hatch: %s (+%d)", targetEgg.displayName or targetEgg.eggName, allowedHatch)
+        if (targetEgg.zoneIndex or 1) >= 5 and zone5EggUnlockedTime then
+            local elapsedZone5 = os.clock() - zone5EggUnlockedTime
+            if elapsedZone5 <= 180 then
+                local remSec = math.max(0, math.floor(180 - elapsedZone5))
+                state.hatchStatus = string.format("🥚 Bãi 5 (3p đầu còn %ds): Mở trứng (+%d)", remSec, allowedHatch)
+            else
+                state.hatchStatus = string.format("🥚 Đảo 100%%: Infinite Hatch (+%d)", allowedHatch)
+            end
+        else
+            state.hatchStatus = string.format("🥚 Infinite Hatch: %s (+%d)", targetEgg.displayName or targetEgg.eggName, allowedHatch)
+        end
     else
         -- CÂN ĐỐI NGÂN SÁCH TYCOON (DÀNH CHO CÁC BÃI 1-4): MUA NÚT VS MỞ TRỨNG
         local targetBtn, btnPrice, isMilestone = nil, 0, false
