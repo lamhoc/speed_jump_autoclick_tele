@@ -156,11 +156,11 @@ local DEFAULT_CONFIG = {
     AutoEventPass = false,
 
     -- Map & Render Optimization
-    OptimizeMap = false,                 -- Master toggle for world cleanup + visual hiding + lighting/FX reduction
-    StripWorldClutter = false,           -- Destroy unused world maps/props (PSX Portal, Border, Ornaments, unused Instances, __DEBRIS)
-    HideIslandVisuals = false,           -- Make PumpkinTycoonIslands, __THINGS.Plots, Pads, Pumpkins invisible + strip decals/FX
-    HideEntityVisuals = false,           -- Make Breakables, CustomEggs, Pets, Orbs & other players invisible (keeps hitboxes/data)
-    OptimizeLightingAndEffects = false,  -- Disable Shadows/Sky/Bloom/Atmosphere/PostEffects/Particles and Terrain decoration
+    OptimizeMap = true,                 -- Master toggle for world cleanup + visual hiding + lighting/FX reduction
+    StripWorldClutter = true,           -- Destroy unused world maps/props (PSX Portal, Border, Ornaments, unused Instances, __DEBRIS)
+    HideIslandVisuals = true,           -- Make PumpkinTycoonIslands, __THINGS.Plots, Pads, Pumpkins invisible + strip decals/FX
+    HideEntityVisuals = true,           -- Make Breakables, CustomEggs, Pets, Orbs & other players invisible (keeps hitboxes/data)
+    OptimizeLightingAndEffects = true,  -- Disable Shadows/Sky/Bloom/Atmosphere/PostEffects/Particles and Terrain decoration
     SafeFloorEnabled = true,            -- Maintain invisible backup Baseplate under own plot to prevent void falls
     OptimizeScanInterval = 2.0,         -- Seconds between low-cost sweeps for newly streamed islands/players
 
@@ -174,8 +174,8 @@ local DEFAULT_CONFIG = {
     NotifyTitanic = true,
 
     -- Cấu hình hiệu năng & FPS (Non-Opti 60FPS vs Opti 5FPS)
-    CPUSaver = false,
-    TargetFPS = 60,
+    CPUSaver = true,
+    TargetFPS = 5,
 }
 
 local function ApplyConfigDefaults(dst, src)
@@ -4724,8 +4724,22 @@ local MiniGuiState = {
 local function SetupMiniGui()
     if Config.ShowGui == false then return end
     pcall(function()
-        local CoreGui = game:GetService("CoreGui")
-        local parentTarget = (type(gethui) == "function" and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        local parentTarget = nil
+        if type(gethui) == "function" then
+            local ok, res = pcall(gethui)
+            if ok and res then parentTarget = res end
+        end
+        if not parentTarget then
+            pcall(function()
+                local cg = game:GetService("CoreGui")
+                if cg then
+                    parentTarget = cg:FindFirstChild("RobloxGui") or cg
+                end
+            end)
+        end
+        if not parentTarget then
+            parentTarget = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
+        end
         if not parentTarget then return end
 
         local existing = parentTarget:FindFirstChild("KizHub_MiniTycoonGui")
@@ -4735,13 +4749,14 @@ local function SetupMiniGui()
         sg.Name = "KizHub_MiniTycoonGui"
         sg.ResetOnSpawn = false
         sg.DisplayOrder = 9999
+        pcall(function() sg.IgnoreGuiInset = true end)
 
         local f = Instance.new("Frame")
         f.Name = "MiniContainer"
-        f.Size = UDim2.new(0, 275, 0, 132)
+        f.Size = UDim2.new(0, 275, 0, 126)
         f.Position = UDim2.new(0, 15, 0, 50)
         f.BackgroundColor3 = Color3.fromRGB(15, 17, 23)
-        f.BackgroundTransparency = 0.2
+        f.BackgroundTransparency = 0.15
         f.BorderSizePixel = 0
         f.Active = true
         f.Draggable = true
@@ -4757,7 +4772,7 @@ local function SetupMiniGui()
         stroke.Parent = f
 
         local title = Instance.new("TextLabel")
-        title.Size = UDim2.new(1, -16, 0, 20)
+        title.Size = UDim2.new(0, 175, 0, 20)
         title.Position = UDim2.new(0, 10, 0, 4)
         title.BackgroundTransparency = 1
         title.Text = "👑 Kiz Hub • Tycoon Kaitun"
@@ -4766,6 +4781,41 @@ local function SetupMiniGui()
         title.Font = Enum.Font.GothamBold
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = f
+
+        -- Nút bấm bật/tắt 3D Saver trực tiếp trên GUI để tiện quan sát
+        local toggle3D = Instance.new("TextButton")
+        toggle3D.Name = "Toggle3DButton"
+        toggle3D.Size = UDim2.new(0, 75, 0, 18)
+        toggle3D.Position = UDim2.new(0, 190, 0, 5)
+        toggle3D.Text = Config.CPUSaver and "3D: OFF" or "3D: ON"
+        toggle3D.TextColor3 = Color3.fromRGB(255, 255, 255)
+        toggle3D.BackgroundColor3 = Config.CPUSaver and Color3.fromRGB(220, 38, 38) or Color3.fromRGB(22, 163, 74)
+        toggle3D.TextSize = 10
+        toggle3D.Font = Enum.Font.GothamBold
+        toggle3D.BorderSizePixel = 0
+        toggle3D.Parent = f
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 4)
+        btnCorner.Parent = toggle3D
+
+        toggle3D.MouseButton1Click:Connect(function()
+            Config.CPUSaver = not Config.CPUSaver
+            pcall(function()
+                local r = game:GetService("RunService")
+                if Config.CPUSaver then
+                    if type(setfpscap) == "function" then setfpscap(Config.TargetFPS or 5) end
+                    if type(r.Set3dRenderingEnabled) == "function" then r:Set3dRenderingEnabled(false) end
+                    toggle3D.Text = "3D: OFF"
+                    toggle3D.BackgroundColor3 = Color3.fromRGB(220, 38, 38)
+                else
+                    if type(setfpscap) == "function" then setfpscap(60) end
+                    if type(r.Set3dRenderingEnabled) == "function" then r:Set3dRenderingEnabled(true) end
+                    toggle3D.Text = "3D: ON"
+                    toggle3D.BackgroundColor3 = Color3.fromRGB(22, 163, 74)
+                end
+            end)
+        end)
 
         local function makeLabel(yPos, color)
             local l = Instance.new("TextLabel")
