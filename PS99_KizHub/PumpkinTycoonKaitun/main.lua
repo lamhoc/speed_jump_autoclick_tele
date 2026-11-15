@@ -374,8 +374,22 @@ task.spawn(function()
                     r1.Stars.TextColor3 = Color3.fromRGB(56, 189, 248)
                     r1.Name.Text = "Tiến Độ Xây Đảo"
                     local isDone = prog.completed or (prog.percent >= 1)
-                    r1.ProgText.Text = string.format("%d / %d (%.0f%%) • %s", prog.ownedButtons, prog.totalButtons, prog.percent * 100, isDone and "HOÀN THÀNH" or "ĐANG XÂY")
-                    r1.ProgText.TextColor3 = isDone and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(248, 113, 113)
+                    local btnInfo = TycoonFarm and type(TycoonFarm.getNextButtonInfo) == "function" and TycoonFarm.getNextButtonInfo()
+                    if isDone then
+                        r1.ProgText.Text = string.format("%d / %d (100%%) • HOÀN THÀNH", prog.ownedButtons, prog.totalButtons)
+                        r1.ProgText.TextColor3 = Color3.fromRGB(52, 211, 153)
+                    elseif btnInfo then
+                        if btnInfo.canAfford then
+                            r1.ProgText.Text = string.format("%d/%d (%.0f%%) • Nút: %s (%s - ĐỦ TIỀN)", prog.ownedButtons, prog.totalButtons, prog.percent * 100, btnInfo.name, Network.shorten(btnInfo.price))
+                            r1.ProgText.TextColor3 = Color3.fromRGB(52, 211, 153)
+                        else
+                            r1.ProgText.Text = string.format("%d/%d (%.0f%%) • %s (Thiếu %s)", prog.ownedButtons, prog.totalButtons, prog.percent * 100, btnInfo.name, Network.shorten(btnInfo.missing))
+                            r1.ProgText.TextColor3 = Color3.fromRGB(248, 113, 113)
+                        end
+                    else
+                        r1.ProgText.Text = string.format("%d / %d (%.0f%%) • %s", prog.ownedButtons, prog.totalButtons, prog.percent * 100, isDone and "HOÀN THÀNH" or "ĐANG XÂY")
+                        r1.ProgText.TextColor3 = isDone and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(248, 113, 113)
+                    end
                     r1.BarFill.Size = UDim2.new(math.clamp(prog.percent, 0, 1), 0, 1, 0)
                     r1.BarFill.BackgroundColor3 = isDone and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(56, 189, 248)
                 end

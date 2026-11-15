@@ -381,7 +381,16 @@ function EggHatch.hatchBestEggTick(state)
         else
             -- GIAI ĐOẠN 2: Sau 3 phút & đảo CHƯA đạt 100% -> TÍCH 100% COIN MUA SẠCH NÚT ĐỂ ĐẠT 100% ĐẢO
             local percentVal = math.floor(((prog.percent or 0) * 100) * 10) / 10
-            state.hatchStatus = string.format("Tích coin hoàn thành 100%% đảo (%d/%d nút • %.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
+            local btnInfo = TycoonFarm and type(TycoonFarm.getNextButtonInfo) == "function" and TycoonFarm.getNextButtonInfo()
+            if btnInfo then
+                if btnInfo.canAfford then
+                    state.hatchStatus = string.format("Nút tới: %s (%s) • ĐÃ ĐỦ COIN (Đang mua!)", btnInfo.name, Network.shorten(btnInfo.price))
+                else
+                    state.hatchStatus = string.format("Nút tới: %s (%s) • Thiếu %s Coins (Đảo: %.1f%%)", btnInfo.name, Network.shorten(btnInfo.price), Network.shorten(btnInfo.missing), percentVal)
+                end
+            else
+                state.hatchStatus = string.format("Tích coin hoàn thành 100%% đảo (%d/%d nút • %.1f%%)", prog.ownedButtons or 0, prog.totalButtons or 0, percentVal)
+            end
             return -- Ngưng mở trứng hoàn toàn để dành 100% coins cho TycoonFarm mua nút!
         end
     else
